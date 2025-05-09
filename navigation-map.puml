@@ -1,0 +1,53 @@
+@startuml DTF Manager Navigation Map
+
+skinparam {
+  BackgroundColor transparent
+  ArrowColor #2563EB
+  NodeColor #2563EB
+  NodeBorderColor #2563EB
+}
+
+rectangle "Dashboard" as dashboard #E5E7EB
+rectangle "Productos" as products #E5E7EB
+rectangle "Diseños DTF" as designs #E5E7EB
+rectangle "Alertas" as alerts #E5E7EB
+rectangle "Tendencias" as trends #E5E7EB
+rectangle "Sincronización" as sync #E5E7EB
+rectangle "Usuarios" as users #E5E7EB
+rectangle "Configuración" as settings #E5E7EB
+
+dashboard --> products : navega
+dashboard --> designs : navega
+dashboard --> alerts : navega
+dashboard --> trends : navega
+dashboard --> sync : navega
+dashboard --> users : navega
+dashboard --> settings : navega
+
+products --> "Lista de Productos" as productList : contiene
+products --> "Gestión de Inventario" as inventory : contiene
+products --> "Categorías" as productCategories : contiene
+
+designs --> "Biblioteca de Diseños" as designLibrary : contiene
+designs --> "Categorías de Diseños" as designCategories : contiene
+designs --> "Estado de Stock" as designStock : contiene
+
+alerts --> "Alertas Activas" as activeAlerts : contiene
+alerts --> "Historial de Alertas" as alertHistory : contiene
+alerts --> "Configuración de Alertas" as alertSettings : contiene
+
+trends --> "Análisis de Ventas" as salesAnalysis : contiene
+trends --> "Productos Destacados" as featuredProducts : contiene
+trends --> "Estadísticas" as statistics : contiene
+
+sync --> "Estado de Plataformas" as platformStatus : contiene
+sync --> "Historial de Sincronización" as syncHistory : contiene
+sync --> "Configuración de Sync" as syncSettings : contiene
+
+users --> "Gestión de Usuarios" as userManagement : contiene
+users --> "Roles y Permisos" as roles : contiene
+
+settings --> "Perfil de Usuario" as userProfile : contiene
+settings --> "Preferencias del Sistema" as systemPreferences : contiene
+
+@enduml
