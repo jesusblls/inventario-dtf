@@ -143,7 +143,6 @@ export function SyncPage() {
   };
 
   return (
-    <div className="h-full flex flex-col">
       <div className="p-4 md:p-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
@@ -295,6 +294,5 @@ export function SyncPage() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
