@@ -83,10 +83,8 @@ async function getLastSyncDate() {
     return data;
   } catch (error) {
     console.error('❌ Error obteniendo última fecha de sincronización:', error);
-    // Return a date 30 days ago as fallback
-    const fallbackDate = new Date();
-    fallbackDate.setDate(fallbackDate.getDate() - 30);
-    return fallbackDate.toISOString();
+    // Return a date from 2023 as fallback
+    return '2023-01-01T00:00:00Z';
   }
 }
 
@@ -144,7 +142,9 @@ async function getOrders(accessToken: string, createdAfter: string) {
 
 async function getOrderItems(accessToken: string, orderId: string) {
   try {
-    console.log(`📝 Obteniendo items de la orden ${orderId}...`);
+    console.log(`📦 Procesando orden ${orderId}`);
+    console.log('📝 Obteniendo detalles de items...');
+    
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -157,16 +157,19 @@ async function getOrderItems(accessToken: string, orderId: string) {
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
+      console.error(`❌ Error HTTP: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
-      console.error('❌ Error en respuesta de items:', errorText);
+      console.error('❌ Detalles del error:', errorText);
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log(`✅ ${data.payload.OrderItems.length} items obtenidos para la orden ${orderId}`);
+    console.log(`✅ Items obtenidos:`, JSON.stringify(data.payload.OrderItems, null, 2));
+    console.log(`📊 Total de items: ${data.payload.OrderItems.length}`);
+    
     return data.payload;
   } catch (error) {
-    console.error('❌ Error obteniendo items de la orden:', error);
+    console.error(`❌ Error procesando items de la orden ${orderId}:`, error);
     throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
