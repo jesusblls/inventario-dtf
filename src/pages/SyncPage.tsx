@@ -65,7 +65,6 @@ export function SyncPage() {
 
       if (productsError) throw productsError;
 
-      // Get the total items processed from the latest successful sync
       const { data: latestSync, error: syncError } = await supabase
         .from('sync_history')
         .select('*')
@@ -77,7 +76,7 @@ export function SyncPage() {
 
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
-        .select('*')
+        .select('*');
 
       if (ordersError) throw ordersError;
 
@@ -120,56 +119,6 @@ export function SyncPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const syncProducts = async () => {
-    try {
-      setSyncInProgress(true);
-      setError(null);
-
-      const startStatus: SyncStatus = {
-        id: crypto.randomUUID(),
-        type: 'products',
-        start_date: new Date().toISOString(),
-        end_date: new Date().toISOString(),
-        items_processed: 0,
-        status: 'in_progress',
-        error_message: null,
-        created_at: new Date().toISOString()
-      };
-      setSyncHistory(prev => [startStatus, ...prev]);
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error desconocido al sincronizar');
-      }
-
-      await fetchStats();
-      await fetchSyncHistory();
-    } catch (err) {
-      console.error('Error syncing products:', err);
-      setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
-    } finally {
-      setSyncInProgress(false);
-    }
-  };
-
-  const handleSync = async () => {
-    await syncProducts();
   };
 
   const getStatusIcon = (status: SyncStatus['status']) => {
@@ -223,7 +172,7 @@ export function SyncPage() {
             Configuración
           </button>
           <button
-            onClick={handleSync}
+            onClick={fetchSyncHistory}
             disabled={syncInProgress}
             className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
               syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
@@ -282,32 +231,26 @@ export function SyncPage() {
                   Estado
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Tipo
+                  Órdenes Procesadas
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Elementos
+                  Productos Procesados
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Inicio
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Fin
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Detalles
+                  Fecha
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center">
+                  <td colSpan={4} className="px-6 py-4 text-center">
                     <Loader className="w-6 h-6 text-blue-500 animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : syncHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     No hay registros de sincronización
                   </td>
                 </tr>
@@ -320,26 +263,14 @@ export function SyncPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900 dark:text-white capitalize">
-                        {sync.type === 'products' ? 'Productos' : 'Órdenes'}
-                      </span>
+                      <span className="text-sm text-gray-900 dark:text-white">{sync.items_processed}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-gray-900 dark:text-white">{sync.items_processed}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(sync.start_date).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {new Date(sync.end_date).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {sync.error_message || 'Sincronización exitosa'}
+                        {new Date(sync.created_at).toLocaleString()}
                       </span>
                     </td>
                   </tr>
