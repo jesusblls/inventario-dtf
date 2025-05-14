@@ -28,32 +28,13 @@ export function UsersPage() {
       setLoading(true);
       setError(null);
 
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*');
-
-      if (profilesError) throw profilesError;
-
-      // Get user details from auth.users through RLS policies
-      const { data: users, error: usersError } = await supabase.auth.admin.listUsers();
+      const { data: { users }, error: usersError } = await supabase.rpc('get_users');
       
       if (usersError) {
         throw usersError;
       }
 
-      const combinedUsers = users.users.map(user => {
-        const profile = profiles?.find(p => p.id === user.id);
-        return {
-          id: user.id,
-          name: profile?.name || null,
-          email: user.email,
-          role: profile?.role || 'user',
-          created_at: user.created_at,
-          last_sign_in_at: user.last_sign_in_at
-        };
-      });
-
-      setUsers(combinedUsers);
+      setUsers(users || []);
     } catch (err) {
       console.error('Error fetching users:', err);
       setError('Error al cargar los usuarios. Por favor, intenta de nuevo.');
@@ -74,7 +55,7 @@ export function UsersPage() {
 
   const handleDeleteUser = async (userId: string) => {
     try {
-      const { error } = await supabase.auth.admin.deleteUser(userId);
+      const { error } = await supabase.rpc('delete_user', { user_id: userId });
       if (error) throw error;
       
       await fetchUsers(); // Refresh the list after deletion
