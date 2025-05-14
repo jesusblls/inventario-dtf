@@ -16,6 +16,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
 
   const fetchUserRole = async (userId: string) => {
     try {
@@ -25,11 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single();
 
-      if (error) {
-        console.error('Error fetching user role:', error);
-        return 'user';
-      }
-
+      if (error) throw error;
       return data?.role || 'user';
     } catch (error) {
       console.error('Error fetching user role:', error);
@@ -40,48 +37,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    async function initializeAuth() {
+    const initializeAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && mounted) {
           setUser(session.user);
           const role = await fetchUserRole(session.user.id);
-          setUserRole(role);
+          if (mounted) {
+            setUserRole(role);
+          }
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
         if (mounted) {
           setLoading(false);
+          setInitialized(true);
         }
       }
-    }
+    };
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-      
-      setLoading(true);
-      
+
       if (session?.user) {
         setUser(session.user);
         const role = await fetchUserRole(session.user.id);
-        setUserRole(role);
+        if (mounted) {
+          setUserRole(role);
+        }
       } else {
         setUser(null);
         setUserRole(null);
       }
-      
-      setLoading(false);
+
+      if (mounted && initialized) {
+        setLoading(false);
+      }
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [initialized]);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -95,8 +97,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -108,13 +108,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Sign out error:', error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
+  const value = {
+    user,
+    userRole,
+    loading,
+    signIn,
+    signOut,
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userRole, loading, signIn, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
