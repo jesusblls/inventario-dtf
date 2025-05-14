@@ -37,10 +37,11 @@ export function LoginPage() {
     } catch (err) {
       console.error('Login error:', err);
       setError(
-        'No pudimos iniciar sesión con estas credenciales. Por favor, verifica que:' +
-        '\n1. Tu correo electrónico esté escrito correctamente' +
-        '\n2. Tu contraseña sea la correcta' +
-        '\n3. Tengas una cuenta registrada'
+        'Error al iniciar sesión. Por favor, verifica que:\n\n' +
+        '1. Hayas confirmado tu correo electrónico después del registro\n' +
+        '2. Tu correo electrónico y contraseña sean correctos\n' +
+        '3. Si olvidaste tu contraseña, usa la opción "¿Olvidaste tu contraseña?"\n\n' +
+        'Si el problema persiste, contacta al soporte técnico.'
       );
     } finally {
       setLoading(false);
