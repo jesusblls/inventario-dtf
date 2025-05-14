@@ -70,7 +70,12 @@ async function getAccessToken() {
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const region = Deno.env.get('AMAZON_REGION');
+    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
+
+    // Validate region format
+    if (!region?.match(/^[a-z]{2}-[a-z]{4,}-\d$/)) {
+      throw new Error('Invalid region format. Expected format: xx-xxxxx-#');
+    }
     
     const headers = {
       'x-amz-access-token': accessToken,
@@ -82,7 +87,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
       CreatedAfter: createdAfter,
     });
 
-    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/orders/v0/orders?${params}`;
+    const apiUrl = `https://sellingpartnerapi.${region}.amazon.com/orders/v0/orders?${params}`;
     console.log('Fetching orders from:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
