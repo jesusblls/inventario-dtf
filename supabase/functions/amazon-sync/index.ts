@@ -35,7 +35,10 @@ async function getAccessToken() {
     const clientId = Deno.env.get('AMAZON_CLIENT_ID');
     const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET');
 
-    const response = await fetch('https://api.amazon.com/auth/o2/token', {
+    const tokenUrl = 'https://api.amazon.com/auth/o2/token';
+    console.log('🔑 Requesting access token from:', tokenUrl);
+
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -50,16 +53,20 @@ async function getAccessToken() {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to get access token: ${response.status} ${response.statusText}`);
+      console.error('❌ Token request failed:', response.status, errorText);
+      throw new Error(`Failed to get access token: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
     if (!data.access_token) {
+      console.error('❌ No access token in response:', data);
       throw new Error('Access token not found in response');
     }
 
+    console.log('✅ Access token obtained successfully');
     return data.access_token;
   } catch (error) {
+    console.error('❌ Authentication error:', error);
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
@@ -73,6 +80,9 @@ async function getOrders(accessToken: string, nextToken?: string) {
     }
 
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    if (!marketplaceId) {
+      throw new Error('AMAZON_MARKETPLACE_ID is not defined');
+    }
     
     const headers = {
       'x-amz-access-token': accessToken,
@@ -81,7 +91,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
     };
 
     const params = new URLSearchParams({
-      MarketplaceIds: marketplaceId!.trim(),
+      MarketplaceIds: marketplaceId.trim(),
       CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
@@ -94,7 +104,11 @@ async function getOrders(accessToken: string, nextToken?: string) {
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
     console.log('🔍 URL de la API:', apiUrl);
 
-    const response = await fetch(apiUrl, { headers });
+    const response = await fetch(apiUrl, { 
+      headers,
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(30000)
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -104,6 +118,11 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const data = await response.json();
     console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
+
+    if (!data.payload) {
+      console.error('❌ Invalid response format:', data);
+      throw new Error('Invalid response format from Amazon API');
+    }
 
     const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
@@ -143,17 +162,29 @@ async function getOrderItems(accessToken: string, orderId: string) {
     };
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+    console.log('🔍 Obteniendo items para orden:', orderId);
 
-    const response = await fetch(apiUrl, { headers });
+    const response = await fetch(apiUrl, { 
+      headers,
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(30000)
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
+      console.error(`❌ Error obteniendo items para orden ${orderId}:`, errorText);
+      throw new Error(`Failed to get order items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
+    if (!data.payload) {
+      throw new Error('Invalid response format from Amazon API');
+    }
+
+    console.log(`✅ Items obtenidos para orden ${orderId}`);
     return data.payload;
   } catch (error) {
+    console.error(`❌ Error obteniendo items para orden ${orderId}:`, error);
     throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
@@ -173,7 +204,7 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
 
     if (error) throw error;
   } catch (error) {
-    // Silently fail if we can't save history
+    console.error('❌ Error saving sync history:', error);
   }
 }
 
@@ -334,13 +365,21 @@ Deno.serve(async (req) => {
       );
     }
 
+    console.log('🚀 Starting Amazon sync process...');
+    
     await validateEnvironment();
+    console.log('✅ Environment variables validated');
 
     const startDate = '2023-01-01T00:00:00Z';
     const endDate = new Date().toISOString();
 
+    console.log('🔑 Getting access token...');
     const accessToken = await getAccessToken();
+    console.log('✅ Access token obtained');
+
+    console.log('📦 Fetching orders...');
     const { Orders } = await getOrders(accessToken);
+    console.log(`✅ Retrieved ${Orders.length} orders`);
 
     const results = [];
     let successCount = 0;
@@ -349,6 +388,8 @@ Deno.serve(async (req) => {
 
     for (const order of Orders) {
       try {
+        console.log(`📝 Processing order ${order.AmazonOrderId}...`);
+        
         // Check if order already exists
         const orderExists = await checkOrderExists(order.AmazonOrderId);
         if (orderExists) {
@@ -358,10 +399,12 @@ Deno.serve(async (req) => {
 
         // Save order first
         await saveOrder(order);
+        console.log(`✅ Order ${order.AmazonOrderId} saved`);
 
         // Then get and save order items
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         await saveOrderItems(order.AmazonOrderId, items.OrderItems);
+        console.log(`✅ Items for order ${order.AmazonOrderId} saved`);
 
         // Save new products if needed
         for (const item of items.OrderItems) {
@@ -376,8 +419,10 @@ Deno.serve(async (req) => {
               });
 
             if (productError) {
+              console.error(`❌ Error saving product ${item.ASIN}:`, productError);
               errorCount++;
             } else {
+              console.log(`✅ New product ${item.ASIN} saved`);
               successCount++;
             }
           }
@@ -389,6 +434,7 @@ Deno.serve(async (req) => {
           success: true 
         });
       } catch (error) {
+        console.error(`❌ Error processing order ${order.AmazonOrderId}:`, error);
         errorCount++;
         results.push({ 
           orderId: order.AmazonOrderId, 
@@ -407,6 +453,9 @@ Deno.serve(async (req) => {
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
 
+    console.log('✅ Sync process completed');
+    console.log(`📊 Summary: ${successCount} successful, ${errorCount} errors`);
+
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -423,6 +472,8 @@ Deno.serve(async (req) => {
       { headers: corsHeaders }
     );
   } catch (error) {
+    console.error('❌ Fatal error during sync:', error);
+    
     await saveSyncHistory(
       new Date().toISOString(),
       new Date().toISOString(),

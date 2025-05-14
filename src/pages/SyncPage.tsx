@@ -119,12 +119,24 @@ export function SyncPage() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        credentials: 'include'
+        // Add timeout to prevent hanging requests
+        signal: AbortSignal.timeout(120000)
       });
 
       if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText} - ${errorData}`);
+        let errorMessage;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || `Error ${response.status}: ${response.statusText}`;
+        } catch {
+          errorMessage = `Error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Sync failed');
       }
 
       await fetchStats();
@@ -132,6 +144,7 @@ export function SyncPage() {
     } catch (err) {
       console.error('Error syncing:', err);
       setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
+      setStats(prev => ({ ...prev, status: 'error' }));
     } finally {
       setSyncInProgress(false);
     }
