@@ -106,7 +106,6 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      // Add timeout to prevent hanging requests
       signal: AbortSignal.timeout(30000)
     });
 
@@ -166,7 +165,6 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      // Add timeout to prevent hanging requests
       signal: AbortSignal.timeout(30000)
     });
 
@@ -236,22 +234,24 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
   return !!data;
 }
 
-async function saveOrder(order: any) {
+async function saveOrdersBulk(orders: any[]) {
   try {
-    const orderAmount = order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0;
+    const ordersToSave = orders.map(order => ({
+      amazon_order_id: order.AmazonOrderId,
+      status: order.OrderStatus,
+      amount: order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0,
+      last_sync_date: new Date().toISOString()
+    }));
 
     const { error } = await supabase
       .from('amazon_orders')
-      .insert({
-        amazon_order_id: order.AmazonOrderId,
-        status: order.OrderStatus,
-        amount: orderAmount,
-        last_sync_date: new Date().toISOString()
-      });
+      .insert(ordersToSave);
 
     if (error) throw error;
+
+    console.log(`✅ Saved ${ordersToSave.length} orders in bulk`);
   } catch (error) {
-    console.error('Error saving order:', error);
+    console.error('❌ Error saving orders in bulk:', error);
     throw error;
   }
 }
@@ -381,27 +381,31 @@ Deno.serve(async (req) => {
     const { Orders } = await getOrders(accessToken);
     console.log(`✅ Retrieved ${Orders.length} orders`);
 
+    // Filter out existing orders
+    const newOrders = [];
+    for (const order of Orders) {
+      const exists = await checkOrderExists(order.AmazonOrderId);
+      if (!exists) {
+        newOrders.push(order);
+      }
+    }
+
+    console.log(`📝 Found ${newOrders.length} new orders to process`);
+
+    // Save all new orders in bulk first
+    if (newOrders.length > 0) {
+      await saveOrdersBulk(newOrders);
+    }
+
     const results = [];
     let successCount = 0;
     let errorCount = 0;
-    const totalOrders = Orders.length;
 
-    for (const order of Orders) {
+    // Now process items for each order
+    for (const order of newOrders) {
       try {
-        console.log(`📝 Processing order ${order.AmazonOrderId}...`);
+        console.log(`📝 Processing items for order ${order.AmazonOrderId}...`);
         
-        // Check if order already exists
-        const orderExists = await checkOrderExists(order.AmazonOrderId);
-        if (orderExists) {
-          console.log(`📝 Orden ${order.AmazonOrderId} ya existe, saltando...`);
-          continue;
-        }
-
-        // Save order first
-        await saveOrder(order);
-        console.log(`✅ Order ${order.AmazonOrderId} saved`);
-
-        // Then get and save order items
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         await saveOrderItems(order.AmazonOrderId, items.OrderItems);
         console.log(`✅ Items for order ${order.AmazonOrderId} saved`);
@@ -438,7 +442,7 @@ Deno.serve(async (req) => {
         errorCount++;
         results.push({ 
           orderId: order.AmazonOrderId, 
-          error: `Failed to process order: ${error.message}` 
+          error: error.message 
         });
       }
     }
@@ -448,7 +452,7 @@ Deno.serve(async (req) => {
     await saveSyncHistory(
       startDate,
       endDate,
-      totalOrders,
+      newOrders.length,
       syncStatus,
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
@@ -463,7 +467,7 @@ Deno.serve(async (req) => {
         summary: {
           startDate,
           endDate,
-          totalOrders,
+          totalOrders: newOrders.length,
           successCount,
           errorCount
         },
