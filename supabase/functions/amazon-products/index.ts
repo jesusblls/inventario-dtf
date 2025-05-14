@@ -112,7 +112,6 @@ async function getAllProducts(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
-    // Updated API endpoint and headers for SP-API Catalog Items API
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -120,8 +119,8 @@ async function getAllProducts(accessToken: string) {
       'x-amz-marketplace-id': marketplaceId,
     };
 
-    // Using the correct SP-API endpoint for catalog items
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${marketplaceId}`;
+    // Add keywords parameter to satisfy the API requirement
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${marketplaceId}&keywords=*`;
     
     console.log('Fetching catalog items from:', apiUrl);
     
