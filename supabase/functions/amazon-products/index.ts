@@ -70,12 +70,6 @@ async function getAccessToken() {
 async function getCatalogItems(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
-
-    // Validate region format
-    if (!region?.match(/^[a-z]{2}-[a-z]{4,}-\d$/)) {
-      throw new Error('Invalid region format. Expected format: xx-xxxxx-#');
-    }
 
     const headers = {
       'x-amz-access-token': accessToken,
@@ -88,7 +82,7 @@ async function getCatalogItems(accessToken: string) {
       PageSize: '20',
     });
 
-    const apiUrl = `https://sellingpartnerapi.${region}.amazon.com/catalog/2022-04-01/items?${params}`;
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
@@ -132,7 +126,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate environment variables first
     try {
       await validateEnvironment();
     } catch (error) {
