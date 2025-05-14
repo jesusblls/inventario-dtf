@@ -64,27 +64,15 @@ async function getAccessToken() {
   }
 }
 
-async function getLastSyncDate() {
+async function getOrders(accessToken: string, nextToken?: string) {
   try {
-    const { data, error } = await supabase.rpc('get_last_sync_date');
-    
-    if (error) throw error;
-    
-    return data;
-  } catch (error) {
-    return '2023-01-01T00:00:00Z';
-  }
-}
-
-async function getOrders(accessToken: string, createdAfter: string, nextToken?: string) {
-  try {
+    const createdAfter = '2023-01-01T00:00:00Z';
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     if (nextToken) {
       console.log('🔄 Usando NextToken:', nextToken);
     }
 
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
     
     const headers = {
       'x-amz-access-token': accessToken,
@@ -94,7 +82,7 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
 
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId!.trim(),
-      CreatedAfter: formattedDate,
+      CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
     });
@@ -127,7 +115,7 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
     // If there's a next token, recursively get more orders
     if (data.payload?.NextToken) {
       console.log('📑 Obteniendo siguiente página de órdenes...');
-      const nextPageResult = await getOrders(accessToken, createdAfter, data.payload.NextToken);
+      const nextPageResult = await getOrders(accessToken, data.payload.NextToken);
       return {
         Orders: [...filteredOrders, ...nextPageResult.Orders],
         payload: {
@@ -204,6 +192,20 @@ async function checkProductExists(asin: string): Promise<boolean> {
   return !!data;
 }
 
+async function checkOrderExists(orderId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('amazon_orders')
+    .select('id')
+    .eq('amazon_order_id', orderId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  return !!data;
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method === 'OPTIONS') {
@@ -228,24 +230,28 @@ Deno.serve(async (req) => {
 
     await validateEnvironment();
 
-    const lastSyncDate = await getLastSyncDate();
-    const startDate = lastSyncDate;
+    const startDate = '2023-01-01T00:00:00Z';
     const endDate = new Date().toISOString();
 
     const accessToken = await getAccessToken();
-    const { Orders } = await getOrders(accessToken, startDate);
+    const { Orders } = await getOrders(accessToken);
 
     const results = [];
     const orderItems = [];
     const products = new Set();
     let successCount = 0;
     let errorCount = 0;
-
-    // Contar órdenes, no productos
     const totalOrders = Orders.length;
 
     for (const order of Orders) {
       try {
+        // Check if order already exists
+        const orderExists = await checkOrderExists(order.AmazonOrderId);
+        if (orderExists) {
+          console.log(`📝 Orden ${order.AmazonOrderId} ya existe, saltando...`);
+          continue;
+        }
+
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         
         orderItems.push({
@@ -257,7 +263,6 @@ Deno.serve(async (req) => {
           if (!products.has(item.ASIN)) {
             products.add(item.ASIN);
             
-            // Check if product already exists before inserting
             const exists = await checkProductExists(item.ASIN);
             if (!exists) {
               const { error: productError } = await supabase
@@ -277,7 +282,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Get order amount from the API response
         const orderAmount = order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0;
 
         const { error: orderError } = await supabase.rpc('sync_amazon_order', {
