@@ -18,7 +18,6 @@ async function validateEnvironment() {
     'AMAZON_CLIENT_ID',
     'AMAZON_CLIENT_SECRET',
     'AMAZON_MARKETPLACE_ID',
-    'AMAZON_REGION',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY'
   ];
@@ -70,7 +69,6 @@ async function getAccessToken() {
 async function getCatalogItems(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
 
     const headers = {
       'x-amz-access-token': accessToken,
