@@ -91,16 +91,17 @@ export function SyncPage() {
         }
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
+      }
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Unexpected response from server. Please try again later.');
+        throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
       }
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error sincronizando productos');
-      }
 
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
@@ -158,16 +159,17 @@ export function SyncPage() {
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
+      }
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Unexpected response from server. Please try again later.');
+        throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
       }
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Error sincronizando órdenes');
-      }
 
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),

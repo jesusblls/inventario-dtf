@@ -108,12 +108,15 @@ async function getOrders(accessToken: string, createdAfter: string) {
 }
 
 Deno.serve(async (req) => {
-  try {
-    // Always include CORS headers in the response
-    const responseHeaders = { ...corsHeaders };
+  // Always include CORS headers in the response
+  const responseHeaders = { ...corsHeaders };
 
+  try {
     if (req.method === 'OPTIONS') {
-      return new Response(null, { headers: responseHeaders });
+      return new Response(null, { 
+        status: 200,
+        headers: responseHeaders 
+      });
     }
 
     if (req.method !== 'POST') {
@@ -122,22 +125,15 @@ Deno.serve(async (req) => {
           success: false, 
           error: 'Method not allowed' 
         }), 
-        { status: 405, headers: responseHeaders }
+        { 
+          status: 405, 
+          headers: responseHeaders 
+        }
       );
     }
 
     // Validate environment variables first
-    try {
-      await validateEnvironment();
-    } catch (error) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: error.message
-        }),
-        { status: 500, headers: responseHeaders }
-      );
-    }
+    await validateEnvironment();
 
     let body;
     try {
@@ -148,7 +144,10 @@ Deno.serve(async (req) => {
           success: false, 
           error: 'Invalid JSON in request body' 
         }), 
-        { status: 400, headers: responseHeaders }
+        { 
+          status: 400, 
+          headers: responseHeaders 
+        }
       );
     }
 
@@ -203,7 +202,10 @@ Deno.serve(async (req) => {
         results,
         timestamp: new Date().toISOString()
       }), 
-      { headers: responseHeaders }
+      { 
+        status: 200,
+        headers: responseHeaders 
+      }
     );
   } catch (error) {
     console.error('Error processing request:', error);
@@ -213,7 +215,10 @@ Deno.serve(async (req) => {
         error: error.message || 'An unexpected error occurred',
         timestamp: new Date().toISOString()
       }), 
-      { status: 500, headers: corsHeaders }
+      { 
+        status: 500, 
+        headers: responseHeaders 
+      }
     );
   }
 });
