@@ -108,31 +108,30 @@ async function getOrders(accessToken: string, createdAfter: string) {
   }
 }
 
-async function syncProducts(orderId: string) {
+async function getOrderItems(accessToken: string, orderId: string) {
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/amazon-products`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${supabaseServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ orderId })
-    });
+    const headers = {
+      'x-amz-access-token': accessToken,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+    console.log('Fetching order items from:', apiUrl);
+
+    const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Failed to sync products: ${response.status} ${response.statusText} - ${errorText}`);
+      console.error('Amazon order items response:', errorText);
+      throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Unknown error syncing products');
-    }
-
-    return data;
+    return data.payload;
   } catch (error) {
-    console.error('Error syncing products:', error);
-    throw error;
+    console.error('Error getting order items:', error);
+    throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
 
@@ -176,35 +175,51 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Set start date to January 1st, 2023
-    const start_date = '2023-01-01T00:00:00Z';
+    const start_date = body.start_date || '2023-01-01T00:00:00Z';
 
     const accessToken = await getAccessToken();
-    const { Orders, payload } = await getOrders(accessToken, start_date);
+    const { Orders } = await getOrders(accessToken, start_date);
 
     const results = [];
-    const productResults = [];
+    const orderItems = [];
 
     for (const order of Orders) {
       try {
-        // First sync products from this order
-        const productSync = await syncProducts(order.AmazonOrderId);
-        productResults.push({
+        // First get order items
+        const items = await getOrderItems(accessToken, order.AmazonOrderId);
+        orderItems.push({
           orderId: order.AmazonOrderId,
-          products: productSync.results
+          items: items.OrderItems
         });
 
-        // Then sync order details
-        const { error } = await supabase.rpc('sync_amazon_order', {
+        // Save products from order items
+        for (const item of items.OrderItems) {
+          const { error: productError } = await supabase
+            .from('amazon_products')
+            .upsert({
+              asin: item.ASIN,
+              title: item.Title,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'asin'
+            });
+
+          if (productError) {
+            console.error('Error saving product:', productError);
+          }
+        }
+
+        // Then save the order
+        const { error: orderError } = await supabase.rpc('sync_amazon_order', {
           p_order_id: order.AmazonOrderId,
           p_status: order.OrderStatus
         });
 
-        if (error) {
-          console.error('Error syncing order:', error);
+        if (orderError) {
+          console.error('Error syncing order:', orderError);
           results.push({ 
             orderId: order.AmazonOrderId, 
-            error: error.message 
+            error: orderError.message 
           });
         } else {
           results.push({ 
@@ -225,9 +240,8 @@ Deno.serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         orders: Orders, 
+        orderItems,
         results,
-        productResults,
-        payload,
         timestamp: new Date().toISOString()
       }), 
       { headers: corsHeaders }
