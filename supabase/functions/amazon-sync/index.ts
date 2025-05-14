@@ -80,6 +80,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
       MarketplaceIds: marketplaceId!,
       CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
+      OrderStatuses: 'Shipped,Unshipped',
       OrderItemsBuyerInfoList: 'true'
     });
 
@@ -96,7 +97,10 @@ async function getOrders(accessToken: string, createdAfter: string) {
 
     const data = await response.json();
     return {
-      Orders: data.Orders || [],
+      Orders: data.Orders?.filter(order => 
+        order.OrderStatus === 'Shipped' || 
+        order.OrderStatus === 'Unshipped'
+      ) || [],
       payload: data
     };
   } catch (error) {
