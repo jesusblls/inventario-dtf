@@ -84,7 +84,7 @@ export function SyncPage() {
       };
       setSyncHistory(prev => [startStatus, ...prev]);
 
-      const response = await fetch('/functions/v1/amazon-products', {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-products`, {
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
@@ -102,6 +102,10 @@ export function SyncPage() {
       }
 
       const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error desconocido al sincronizar productos');
+      }
 
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
@@ -148,7 +152,7 @@ export function SyncPage() {
       };
       setSyncHistory(prev => [startStatus, ...prev]);
 
-      const response = await fetch('/functions/v1/amazon-sync', {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,6 +174,10 @@ export function SyncPage() {
       }
 
       const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error desconocido al sincronizar órdenes');
+      }
 
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
