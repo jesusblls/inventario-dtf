@@ -85,26 +85,18 @@ async function getCatalogItems(accessToken: string) {
       throw new Error(`Invalid region: ${region}. Must be one of: ${validRegions.join(', ')}`);
     }
     
-    // Get the current timestamp in ISO format
-    const timestamp = new Date().toISOString();
-    
     const headers = {
       'x-amz-access-token': accessToken,
-      'x-amz-date': timestamp,
-      'host': `sellingpartnerapi-${region}.amazon.com`,
-      'user-agent': 'Custom-Agent/1.0',
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
     const params = new URLSearchParams({
-      marketplaceIds: marketplaceId!,
-      includedData: 'summaries,attributes,dimensions,identifiers,relationships,salesRanks',
-      pageSize: '20',
+      MarketplaceId: marketplaceId!,
     });
 
-    // Updated endpoint to use the Catalog Items API v2022-04-01
-    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/2022-04-01/items?${params}`;
+    // Using Catalog API v0 endpoint
+    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/v0/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
     console.log('Using region:', region);
     console.log('Using marketplace ID:', marketplaceId);
@@ -122,13 +114,21 @@ async function getCatalogItems(accessToken: string) {
 
     const data = await response.json();
     
-    if (!data.items) {
+    if (!data.payload) {
       console.warn('No items found in response:', data);
       return { items: [], payload: data };
     }
 
+    // Transform the response to match our expected format
+    const items = data.payload.map((item: any) => ({
+      asin: item.asin,
+      summaries: [{
+        titleValue: item.title || 'Unknown Title'
+      }]
+    }));
+
     return {
-      items: data.items,
+      items,
       payload: data
     };
   } catch (error) {
