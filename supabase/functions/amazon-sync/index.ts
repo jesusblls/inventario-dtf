@@ -92,6 +92,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
+    // Format the date to ISO 8601 format without milliseconds
     const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
     
     const headers = {
@@ -100,6 +101,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
       'Content-Type': 'application/json',
     };
 
+    // Ensure marketplaceId is a string and properly formatted
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId!.trim(),
       CreatedAfter: formattedDate,
