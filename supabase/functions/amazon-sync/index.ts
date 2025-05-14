@@ -18,6 +18,7 @@ async function validateEnvironment() {
     'AMAZON_CLIENT_ID',
     'AMAZON_CLIENT_SECRET',
     'AMAZON_MARKETPLACE_ID',
+    'AMAZON_REGION',
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY'
   ];
@@ -69,6 +70,7 @@ async function getAccessToken() {
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    const region = Deno.env.get('AMAZON_REGION');
     
     const headers = {
       'x-amz-access-token': accessToken,
@@ -80,7 +82,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
       CreatedAfter: createdAfter,
     });
 
-    const apiUrl = 'https://sellingpartnerapi-na.amazon.com/orders/v0/orders';
+    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/orders/v0/orders`;
     console.log('Fetching orders from:', apiUrl);
 
     const response = await fetch(

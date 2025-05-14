@@ -83,7 +83,7 @@ async function getCatalogItems(accessToken: string) {
       PageSize: '20',
     });
 
-    const apiUrl = `https://sellingpartnerapi-${region!.toLowerCase()}.amazon.com/catalog/2022-04-01/items?${params}`;
+    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/2022-04-01/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
@@ -108,9 +108,15 @@ async function getCatalogItems(accessToken: string) {
 }
 
 Deno.serve(async (req) => {
+  // Always include CORS headers in the response
+  const responseHeaders = { ...corsHeaders };
+
   try {
     if (req.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { 
+        status: 200,
+        headers: responseHeaders 
+      });
     }
 
     if (req.method !== 'GET') {
@@ -119,7 +125,10 @@ Deno.serve(async (req) => {
           success: false, 
           error: 'Method not allowed' 
         }), 
-        { status: 405, headers: corsHeaders }
+        { 
+          status: 405, 
+          headers: responseHeaders 
+        }
       );
     }
 
@@ -132,7 +141,10 @@ Deno.serve(async (req) => {
           success: false,
           error: error.message
         }),
-        { status: 500, headers: corsHeaders }
+        { 
+          status: 500, 
+          headers: responseHeaders 
+        }
       );
     }
 
@@ -181,7 +193,10 @@ Deno.serve(async (req) => {
         results,
         timestamp: new Date().toISOString()
       }), 
-      { headers: corsHeaders }
+      { 
+        status: 200,
+        headers: responseHeaders 
+      }
     );
   } catch (error) {
     console.error('Error processing request:', error);
@@ -191,7 +206,10 @@ Deno.serve(async (req) => {
         error: error.message || 'An unexpected error occurred',
         timestamp: new Date().toISOString()
       }), 
-      { status: 500, headers: corsHeaders }
+      { 
+        status: 500, 
+        headers: responseHeaders 
+      }
     );
   }
 });
