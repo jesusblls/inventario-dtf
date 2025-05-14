@@ -48,7 +48,7 @@ async function getAccessToken() {
       }),
     });
 
-    console.log(response)
+    console.log(response);
     
     if (!response.ok) {
       const errorText = await response.text();
