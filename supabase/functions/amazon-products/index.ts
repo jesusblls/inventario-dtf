@@ -110,14 +110,20 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
 async function getAllProducts(accessToken: string) {
   try {
+    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    
+    // Updated API endpoint and headers for SP-API Catalog Items API
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'x-amz-marketplace-id': marketplaceId,
     };
 
-    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/v0/items?MarketplaceId=${marketplaceId}`;
+    // Using the correct SP-API endpoint for catalog items
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${marketplaceId}`;
+    
+    console.log('Fetching catalog items from:', apiUrl);
     
     const response = await fetch(apiUrl, { 
       method: 'GET',
@@ -127,11 +133,18 @@ async function getAllProducts(accessToken: string) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Amazon catalog response:', errorText);
-      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    return data.items || [];
+    
+    // Map the response to match our expected format
+    const items = (data.items || []).map(item => ({
+      asin: item.asin || item.Asin,
+      title: item.summaries?.[0]?.itemName || item.attributes?.title?.[0]?.value || 'Unknown Title'
+    }));
+
+    return items;
   } catch (error) {
     console.error('Error getting catalog items:', error);
     throw new Error(`Catalog items fetch failed: ${error.message}`);
