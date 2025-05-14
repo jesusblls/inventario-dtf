@@ -241,6 +241,9 @@ Deno.serve(async (req) => {
     let successCount = 0;
     let errorCount = 0;
 
+    // Contar órdenes, no productos
+    const totalOrders = Orders.length;
+
     for (const order of Orders) {
       try {
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
@@ -301,13 +304,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    const totalProcessed = successCount + errorCount;
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
     
     await saveSyncHistory(
       startDate,
       endDate,
-      totalProcessed,
+      totalOrders, // Usar el número total de órdenes
       syncStatus,
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
@@ -322,7 +324,7 @@ Deno.serve(async (req) => {
         summary: {
           startDate,
           endDate,
-          totalProcessed,
+          totalOrders,
           successCount,
           errorCount
         },
