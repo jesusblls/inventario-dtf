@@ -103,14 +103,16 @@ export function SyncPage() {
     }
   };
 
-  const handleSync = async () => {
+  const handleSync = async (retryCount = 0) => {
     try {
       setSyncInProgress(true);
       setError(null);
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      if (!supabaseUrl) {
-        throw new Error('Supabase URL not configured');
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !anonKey) {
+        throw new Error('Supabase configuration is missing');
       }
 
       const functionUrl = `${supabaseUrl}/functions/v1/amazon-sync`;
@@ -118,9 +120,11 @@ export function SyncPage() {
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${anonKey}`,
           'Content-Type': 'application/json',
-        }
+        },
+        // Add retry mechanism with exponential backoff
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
 
       if (!response.ok) {
@@ -128,10 +132,29 @@ export function SyncPage() {
         throw new Error(errorData.error || `Error en la respuesta del servidor: ${response.status}`);
       }
 
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Unknown error occurred');
+      }
+
       await fetchStats();
       await fetchSyncHistory();
     } catch (err) {
       console.error('Error syncing:', err);
+      
+      // Implement retry logic with exponential backoff
+      if (retryCount < 3) {
+        const backoffDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        console.log(`Retrying sync in ${backoffDelay}ms... (Attempt ${retryCount + 1}/3)`);
+        
+        setTimeout(() => {
+          handleSync(retryCount + 1);
+        }, backoffDelay);
+        
+        return;
+      }
+      
       setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
       setStats(prev => ({ ...prev, status: 'error' }));
     } finally {
@@ -182,7 +205,7 @@ export function SyncPage() {
           <p className="text-gray-600 dark:text-gray-400 mt-1">Gestiona la sincronización con Amazon</p>
         </div>
         <button
-          onClick={handleSync}
+          onClick={() => handleSync()}
           disabled={syncInProgress}
           className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
             syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
@@ -282,7 +305,6 @@ export function SyncPage() {
           </table>
         </div>
         
-        {/* Pagination */}
         <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
           <div className="flex-1 flex justify-between sm:hidden">
             <button
