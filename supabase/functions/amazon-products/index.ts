@@ -28,13 +28,6 @@ async function validateEnvironment() {
   if (missingVars.length > 0) {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
-
-  // Validate region format
-  const validRegions = ['na', 'eu', 'fe'];
-  const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
-  if (!validRegions.includes(region!)) {
-    throw new Error(`Invalid AMAZON_REGION. Must be one of: ${validRegions.join(', ')}`);
-  }
 }
 
 async function getAccessToken() {
