@@ -108,9 +108,8 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Error en respuesta de órdenes:', errorText);
-      throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
+      console.error('❌ Error en respuesta de órdenes:', response.status, response.statusText);
+      throw new Error(`Failed to get orders: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -126,6 +125,8 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
     // If there's a next token, recursively get more orders
     if (data.payload?.NextToken) {
       console.log('📑 Obteniendo siguiente página de órdenes...');
+      // Add delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 2000));
       const nextPageResult = await getOrders(accessToken, createdAfter, data.payload.NextToken);
       return {
         Orders: [...filteredOrders, ...nextPageResult.Orders],
@@ -142,11 +143,14 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
     };
   } catch (error) {
     console.error('❌ Error obteniendo órdenes:', error);
-    throw new Error(`Orders fetch failed: ${error.message}`);
+    // Add delay before retrying
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('🔄 Reintentando obtener órdenes...');
+    return getOrders(accessToken, createdAfter, nextToken);
   }
 }
 
-async function getOrderItems(accessToken: string, orderId: string) {
+async function getOrderItems(accessToken: string, orderId: string, retryCount = 0): Promise<any[]> {
   try {
     const headers = {
       'x-amz-access-token': accessToken,
@@ -160,6 +164,11 @@ async function getOrderItems(accessToken: string, orderId: string) {
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
+      if (retryCount < 3) {
+        console.log(`⚠️ Error al obtener items (intento ${retryCount + 1}/3), reintentando en 5 segundos...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return getOrderItems(accessToken, orderId, retryCount + 1);
+      }
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
     }
 
@@ -168,11 +177,22 @@ async function getOrderItems(accessToken: string, orderId: string) {
     return data.payload?.OrderItems || [];
   } catch (error) {
     console.error(`❌ Error obteniendo items para orden ${orderId}:`, error);
+    if (retryCount < 3) {
+      console.log(`⚠️ Reintentando obtener items (intento ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      return getOrderItems(accessToken, orderId, retryCount + 1);
+    }
     return [];
   }
 }
 
-async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
+async function saveSyncHistory(
+  startDate: string,
+  endDate: string,
+  itemsProcessed: number,
+  status: string,
+  errorMessage?: string
+) {
   try {
     const { error } = await supabase
       .from('sync_history')
@@ -191,16 +211,20 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
   }
 }
 
-async function syncProduct(item: any) {
+async function syncProduct(item: any, retryCount = 0) {
   try {
     console.log('🔄 Sincronizando producto:', item.ASIN);
     
     // Check if product exists
-    const { data: existingProduct } = await supabase
+    const { data: existingProduct, error: checkError } = await supabase
       .from('amazon_products')
       .select('id')
       .eq('asin', item.ASIN)
       .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
 
     if (!existingProduct) {
       console.log('➕ Creando nuevo producto:', item.ASIN);
@@ -214,7 +238,11 @@ async function syncProduct(item: any) {
         });
 
       if (insertError) {
-        console.error('❌ Error creando producto:', insertError);
+        if (retryCount < 3) {
+          console.log(`⚠️ Error al crear producto (intento ${retryCount + 1}/3), reintentando...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return syncProduct(item, retryCount + 1);
+        }
         throw insertError;
       }
       console.log('✅ Producto creado:', item.ASIN);
@@ -225,21 +253,27 @@ async function syncProduct(item: any) {
     return true;
   } catch (error) {
     console.error('❌ Error sincronizando producto:', item.ASIN, error);
+    if (retryCount < 3) {
+      console.log(`⚠️ Reintentando sincronizar producto (intento ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return syncProduct(item, retryCount + 1);
+    }
     return false;
   }
 }
 
-async function syncOrder(accessToken: string, order: any) {
+async function syncOrder(accessToken: string, order: any, retryCount = 0) {
   try {
     console.log('🔄 Sincronizando orden:', order.AmazonOrderId);
     
-    // Get order items
+    // Get order items with retry logic
     const items = await getOrderItems(accessToken, order.AmazonOrderId);
     console.log(`📦 ${items.length} items encontrados para orden:`, order.AmazonOrderId);
     
-    // Sync products first
+    // Sync products first with delay between each
     let productsProcessed = 0;
     for (const item of items) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Add delay between products
       const success = await syncProduct(item);
       if (success) productsProcessed++;
     }
@@ -251,7 +285,11 @@ async function syncOrder(accessToken: string, order: any) {
     });
 
     if (error) {
-      console.error('❌ Error sincronizando orden:', error);
+      if (retryCount < 3) {
+        console.log(`⚠️ Error al sincronizar orden (intento ${retryCount + 1}/3), reintentando...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return syncOrder(accessToken, order, retryCount + 1);
+      }
       throw error;
     }
     
@@ -262,6 +300,11 @@ async function syncOrder(accessToken: string, order: any) {
     };
   } catch (error) {
     console.error('❌ Error sincronizando orden:', order.AmazonOrderId, error);
+    if (retryCount < 3) {
+      console.log(`⚠️ Reintentando sincronizar orden (intento ${retryCount + 1}/3)...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return syncOrder(accessToken, order, retryCount + 1);
+    }
     return {
       success: false,
       productsProcessed: 0
@@ -309,25 +352,30 @@ Deno.serve(async (req) => {
     let errorCount = 0;
     let totalProductsProcessed = 0;
 
-    // Process orders in batches to avoid overwhelming the database
-    const batchSize = 10;
+    // Process orders in smaller batches with delays
+    const batchSize = 5;
     for (let i = 0; i < Orders.length; i += batchSize) {
       const batch = Orders.slice(i, i + batchSize);
-      console.log(`🔄 Procesando lote ${i/batchSize + 1} de ${Math.ceil(Orders.length/batchSize)}`);
+      console.log(`🔄 Procesando lote ${Math.floor(i/batchSize) + 1} de ${Math.ceil(Orders.length/batchSize)}`);
       
-      const results = await Promise.all(
-        batch.map(order => syncOrder(accessToken, order))
-      );
+      // Process orders sequentially within batch
+      for (const order of batch) {
+        const result = await syncOrder(accessToken, order);
+        if (result.success) successCount++;
+        else errorCount++;
+        totalProductsProcessed += result.productsProcessed;
+        
+        // Add delay between orders
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       
-      const batchSuccess = results.filter(r => r.success).length;
-      const batchErrors = results.filter(r => !r.success).length;
-      const batchProducts = results.reduce((sum, r) => sum + r.productsProcessed, 0);
+      console.log(`✅ Lote completado - Éxitos: ${successCount}, Errores: ${errorCount}, Productos: ${totalProductsProcessed}`);
       
-      successCount += batchSuccess;
-      errorCount += batchErrors;
-      totalProductsProcessed += batchProducts;
-
-      console.log(`✅ Lote completado - Éxitos: ${batchSuccess}, Errores: ${batchErrors}, Productos: ${batchProducts}`);
+      // Add delay between batches
+      if (i + batchSize < Orders.length) {
+        console.log('⏳ Esperando antes del siguiente lote...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
     }
 
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
