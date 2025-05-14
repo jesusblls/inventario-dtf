@@ -13,13 +13,9 @@ import { Sidebar } from './components/Sidebar';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-
-function Layout({ children }: LayoutProps) {
+function Layout({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
   return (
     <div className="min-h-screen flex bg-gray-100 dark:bg-gray-900">
@@ -28,9 +24,9 @@ function Layout({ children }: LayoutProps) {
         onClose={() => setIsSidebarOpen(false)} 
         onLogout={signOut}
       />
-      <main className="flex-1 md:ml-64">
+      <div className="flex-1 md:ml-64">
         {children}
-      </main>
+      </div>
     </div>
   );
 }
