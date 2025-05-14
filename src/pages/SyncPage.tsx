@@ -67,7 +67,9 @@ export function SyncPage() {
 
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
-        .select('*');
+        .select('*')
+        .order('last_sync_date', { ascending: false })
+        .limit(1);
 
       if (ordersError) throw ordersError;
 
@@ -75,6 +77,7 @@ export function SyncPage() {
         ...prev,
         totalProducts: products?.length || 0,
         totalOrders: orders?.length || 0,
+        lastSync: orders?.[0]?.last_sync_date || null,
         status: 'connected'
       }));
     } catch (err) {
