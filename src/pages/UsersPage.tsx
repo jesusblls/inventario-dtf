@@ -1,77 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { User, Plus, Edit, Trash2, Search, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 interface UserData {
-  id: string;
-  name: string | null;
+  id: number;
+  name: string;
   email: string;
   role: 'admin' | 'user';
-  created_at: string;
-  last_sign_in_at: string | null;
+  lastLogin: string;
+  status: 'active' | 'inactive';
 }
 
+const users: UserData[] = [
+  {
+    id: 1,
+    name: 'Admin Principal',
+    email: 'admin@dtfmanager.com',
+    role: 'admin',
+    lastLogin: '2024-03-15T10:30:00',
+    status: 'active'
+  },
+  {
+    id: 2,
+    name: 'Juan Pérez',
+    email: 'juan@dtfmanager.com',
+    role: 'user',
+    lastLogin: '2024-03-15T09:45:00',
+    status: 'active'
+  },
+  {
+    id: 3,
+    name: 'María García',
+    email: 'maria@dtfmanager.com',
+    role: 'user',
+    lastLogin: '2024-03-14T16:20:00',
+    status: 'active'
+  }
+];
+
 export function UsersPage() {
-  const [users, setUsers] = useState<UserData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  async function fetchUsers() {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data: { users }, error: usersError } = await supabase.rpc('get_users');
-      
-      if (usersError) {
-        throw usersError;
-      }
-
-      setUsers(users || []);
-    } catch (err) {
-      console.error('Error fetching users:', err);
-      setError('Error al cargar los usuarios. Por favor, intenta de nuevo.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const filteredUsers = users.filter(user =>
-    (user.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const handleDeleteUser = (userId: number) => {
+    // Implementar lógica de eliminación
+    console.log('Eliminar usuario:', userId);
+  };
 
   const handleEditUser = (user: UserData) => {
     setSelectedUser(user);
     setShowAddModal(true);
   };
-
-  const handleDeleteUser = async (userId: string) => {
-    try {
-      const { error } = await supabase.rpc('delete_user', { user_id: userId });
-      if (error) throw error;
-      
-      await fetchUsers(); // Refresh the list after deletion
-    } catch (err) {
-      console.error('Error deleting user:', err);
-      setError('Error al eliminar el usuario. Por favor, intenta de nuevo.');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-8">
@@ -88,15 +72,6 @@ export function UsersPage() {
           Nuevo Usuario
         </button>
       </div>
-
-      {error && (
-        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900 border-l-4 border-red-500 text-red-700 dark:text-red-300">
-          <div className="flex items-center">
-            <AlertCircle className="w-5 h-5 mr-2" />
-            <p>{error}</p>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -128,9 +103,9 @@ export function UsersPage() {
                   Último Acceso
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Fecha Creación
+                  Estado
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
@@ -146,7 +121,7 @@ export function UsersPage() {
                         </div>
                       </div>
                       <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{user.name || 'Sin nombre'}</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">{user.name}</div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
                       </div>
                     </div>
@@ -161,13 +136,19 @@ export function UsersPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'Nunca'}
+                    {new Date(user.lastLogin).toLocaleString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {new Date(user.created_at).toLocaleString()}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                      user.status === 'active'
+                        ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300'
+                        : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-300'
+                    }`}>
+                      {user.status === 'active' ? 'Activo' : 'Inactivo'}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex justify-end space-x-3">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-3">
                       <button
                         onClick={() => handleEditUser(user)}
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
@@ -191,6 +172,7 @@ export function UsersPage() {
         </div>
       </div>
 
+      {/* Modal para añadir/editar usuario */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md">
@@ -207,7 +189,7 @@ export function UsersPage() {
                 <input
                   type="text"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  defaultValue={selectedUser?.name || ''}
+                  defaultValue={selectedUser?.name}
                 />
               </div>
               <div>
@@ -217,7 +199,7 @@ export function UsersPage() {
                 <input
                   type="email"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  defaultValue={selectedUser?.email || ''}
+                  defaultValue={selectedUser?.email}
                 />
               </div>
               {!selectedUser && (

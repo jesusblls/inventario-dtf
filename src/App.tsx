@@ -32,7 +32,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
-  const { user, loading, userRole } = useAuth();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -44,10 +44,6 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
 
   if (!user) {
     return <Navigate to="/login" />;
-  }
-
-  if (adminOnly && userRole !== 'admin') {
-    return <Navigate to="/" />;
   }
 
   return <Layout>{children}</Layout>;
