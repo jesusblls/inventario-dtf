@@ -13,7 +13,6 @@ const corsHeaders = {
 };
 
 async function validateEnvironment() {
-  console.log('🔍 Validando variables de entorno...');
   const requiredVars = [
     'AMAZON_REFRESH_TOKEN',
     'AMAZON_CLIENT_ID',
@@ -26,15 +25,12 @@ async function validateEnvironment() {
   const missingVars = requiredVars.filter(varName => !Deno.env.get(varName));
   
   if (missingVars.length > 0) {
-    console.error('❌ Variables de entorno faltantes:', missingVars.join(', '));
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
-  console.log('✅ Variables de entorno validadas');
 }
 
 async function getAccessToken() {
   try {
-    console.log('🔑 Obteniendo token de acceso...');
     const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN');
     const clientId = Deno.env.get('AMAZON_CLIENT_ID');
     const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET');
@@ -54,42 +50,34 @@ async function getAccessToken() {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Error en respuesta de token:', errorText);
       throw new Error(`Failed to get access token: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
     if (!data.access_token) {
-      console.error('❌ Token no encontrado en la respuesta');
       throw new Error('Access token not found in response');
     }
 
-    console.log('✅ Token de acceso obtenido');
     return data.access_token;
   } catch (error) {
-    console.error('❌ Error obteniendo token:', error);
     throw new Error(`Authentication failed: ${error.message}`);
   }
 }
 
 async function getLastSyncDate() {
   try {
-    console.log('📅 Obteniendo última fecha de sincronización...');
     const { data, error } = await supabase.rpc('get_last_sync_date');
     
     if (error) throw error;
     
-    console.log('✅ Última fecha de sincronización:', data);
     return data;
   } catch (error) {
-    console.error('❌ Error obteniendo última fecha de sincronización:', error);
     return '2023-01-01T00:00:00Z';
   }
 }
 
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
-    console.log('📦 Obteniendo órdenes desde:', createdAfter);
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
     // Format the date to ISO 8601 format without milliseconds
@@ -110,31 +98,26 @@ async function getOrders(accessToken: string, createdAfter: string) {
     });
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
-    console.log('🔍 URL de la API:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Error en respuesta de órdenes:', errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
 
     const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
 
-    console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     return {
       Orders: filteredOrders,
       payload: data.payload
     };
   } catch (error) {
-    console.error('❌ Error obteniendo órdenes:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
@@ -165,7 +148,6 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
 async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
   try {
-    console.log('💾 Guardando historial de sincronización...');
     const { error } = await supabase
       .from('sync_history')
       .insert({
@@ -178,9 +160,8 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
       });
 
     if (error) throw error;
-    console.log('✅ Historial guardado correctamente');
   } catch (error) {
-    console.error('❌ Error guardando historial:', error);
+    // Silently fail if we can't save history
   }
 }
 
@@ -206,19 +187,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('🚀 Iniciando sincronización...');
     await validateEnvironment();
 
     const lastSyncDate = await getLastSyncDate();
     const startDate = lastSyncDate;
     const endDate = new Date().toISOString();
 
-    console.log(`📅 Sincronizando desde ${startDate} hasta ${endDate}`);
-
     const accessToken = await getAccessToken();
     const { Orders } = await getOrders(accessToken, startDate);
-
-    console.log(`🔄 Procesando ${Orders.length} órdenes...`);
 
     const results = [];
     const orderItems = [];
@@ -227,10 +203,6 @@ Deno.serve(async (req) => {
     let errorCount = 0;
 
     for (const order of Orders) {
-      console.log(`\n📦 Procesando orden: ${order.AmazonOrderId}`);
-      console.log('Estado:', order.OrderStatus);
-      console.log('Fecha de creación:', order.PurchaseDate);
-      
       try {
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         
@@ -239,15 +211,8 @@ Deno.serve(async (req) => {
           items: items.OrderItems
         });
 
-        console.log(`\n📝 Procesando ${items.OrderItems.length} items de la orden...`);
         for (const item of items.OrderItems) {
-          console.log(`\n🏷️ Producto: ${item.Title}`);
-          console.log('ASIN:', item.ASIN);
-          console.log('Cantidad:', item.QuantityOrdered);
-          console.log('SKU:', item.SellerSKU);
-
           if (!products.has(item.ASIN)) {
-            console.log('💾 Guardando nuevo producto en la base de datos...');
             products.add(item.ASIN);
             
             const { error: productError } = await supabase
@@ -261,30 +226,25 @@ Deno.serve(async (req) => {
               });
 
             if (productError) {
-              console.error('❌ Error guardando producto:', productError);
               errorCount++;
             } else {
-              console.log('✅ Producto guardado correctamente');
               successCount++;
             }
           }
         }
 
-        console.log('💾 Guardando orden en la base de datos...');
         const { error: orderError } = await supabase.rpc('sync_amazon_order', {
           p_order_id: order.AmazonOrderId,
           p_status: order.OrderStatus
         });
 
         if (orderError) {
-          console.error('❌ Error guardando orden:', orderError);
           errorCount++;
           results.push({ 
             orderId: order.AmazonOrderId, 
             error: orderError.message 
           });
         } else {
-          console.log('✅ Orden guardada correctamente');
           successCount++;
           results.push({ 
             orderId: order.AmazonOrderId, 
@@ -292,7 +252,6 @@ Deno.serve(async (req) => {
           });
         }
       } catch (error) {
-        console.error('❌ Error procesando orden:', error);
         errorCount++;
         results.push({ 
           orderId: order.AmazonOrderId, 
@@ -311,14 +270,6 @@ Deno.serve(async (req) => {
       syncStatus,
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
-
-    console.log('\n🎉 Sincronización completada');
-    console.log(`📊 Resumen:
-- Órdenes procesadas: ${Orders.length}
-- Productos únicos: ${products.size}
-- Éxitos: ${successCount}
-- Errores: ${errorCount}
-`);
 
     return new Response(
       JSON.stringify({ 
@@ -339,8 +290,6 @@ Deno.serve(async (req) => {
       { headers: corsHeaders }
     );
   } catch (error) {
-    console.error('❌ Error general:', error);
-    
     await saveSyncHistory(
       new Date().toISOString(),
       new Date().toISOString(),
