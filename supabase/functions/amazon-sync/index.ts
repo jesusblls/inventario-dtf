@@ -185,6 +185,7 @@ Deno.serve(async (req) => {
     const products = new Set();
 
     for (const order of Orders) {
+      console.log(order);
       try {
         // Get order items
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
