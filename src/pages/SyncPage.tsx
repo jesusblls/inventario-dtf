@@ -87,7 +87,7 @@ export function SyncPage() {
 
       const response = await fetch('/functions/v1/amazon-products', {
         headers: {
-          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         }
       });
 
@@ -147,7 +147,7 @@ export function SyncPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         },
         body: JSON.stringify({
           start_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
