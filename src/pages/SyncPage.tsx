@@ -23,7 +23,7 @@ interface SyncStatus {
   start_date: string;
   end_date: string;
   items_processed: number;
-  status: 'success' | 'error' | 'in_progress';
+  status: 'success' | 'error' | 'in_progress' | 'partial';
   error_message: string | null;
   created_at: string;
 }
@@ -177,6 +177,7 @@ export function SyncPage() {
   const getStatusIcon = (status: SyncStatus['status']) => {
     switch (status) {
       case 'success':
+      case 'partial':
         return <CheckCircle className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />;
       case 'error':
         return <XCircle className="w-5 h-5 text-red-500 dark:text-red-400" />;
