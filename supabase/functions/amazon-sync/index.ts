@@ -72,12 +72,15 @@ async function getOrders(accessToken: string, createdAfter: string) {
     
     const headers = {
       'x-amz-access-token': accessToken,
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId!,
       CreatedAfter: createdAfter,
+      MaxResultsPerPage: '100',
+      OrderItemsBuyerInfoList: 'true'
     });
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
@@ -142,7 +145,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    const start_date = body.start_date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // Set start date to January 1st, 2023
+    const start_date = '2023-01-01T00:00:00Z';
 
     const accessToken = await getAccessToken();
     const { Orders, payload } = await getOrders(accessToken, start_date);
