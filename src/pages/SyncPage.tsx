@@ -91,15 +91,12 @@ export function SyncPage() {
         }
       });
 
-      const responseText = await response.text();
-      let data;
-      
-      try {
-        data = JSON.parse(responseText);
-      } catch (err) {
-        console.error('Invalid JSON response:', responseText);
-        throw new Error('Respuesta inválida del servidor');
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Unexpected response from server. Please try again later.');
       }
+
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Error sincronizando productos');
@@ -161,15 +158,12 @@ export function SyncPage() {
         })
       });
 
-      const responseText = await response.text();
-      let data;
-      
-      try {
-        data = JSON.parse(responseText);
-      } catch (err) {
-        console.error('Invalid JSON response:', responseText);
-        throw new Error('Respuesta inválida del servidor');
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Unexpected response from server. Please try again later.');
       }
+
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Error sincronizando órdenes');

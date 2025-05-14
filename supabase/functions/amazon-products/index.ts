@@ -109,9 +109,6 @@ async function getCatalogItems(accessToken: string) {
 
 Deno.serve(async (req) => {
   try {
-    // Validate environment variables first
-    await validateEnvironment();
-
     if (req.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
@@ -123,6 +120,19 @@ Deno.serve(async (req) => {
           error: 'Method not allowed' 
         }), 
         { status: 405, headers: corsHeaders }
+      );
+    }
+
+    // Validate environment variables first
+    try {
+      await validateEnvironment();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error.message
+        }),
+        { status: 500, headers: corsHeaders }
       );
     }
 
