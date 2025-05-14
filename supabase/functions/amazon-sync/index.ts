@@ -135,6 +135,31 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
   }
 }
 
+async function getOrderItems(accessToken: string, orderId: string) {
+  try {
+    const headers = {
+      'x-amz-access-token': accessToken,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+
+    const response = await fetch(apiUrl, { headers });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.payload?.OrderItems || [];
+  } catch (error) {
+    console.error(`Error fetching items for order ${orderId}:`, error);
+    return [];
+  }
+}
+
 async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
   try {
     const { error } = await supabase
@@ -154,8 +179,46 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
   }
 }
 
-async function syncOrder(order: any) {
+async function syncProduct(item: any) {
   try {
+    // Check if product exists
+    const { data: existingProduct } = await supabase
+      .from('amazon_products')
+      .select('id')
+      .eq('asin', item.ASIN)
+      .single();
+
+    if (!existingProduct) {
+      // Create new product
+      const { error: insertError } = await supabase
+        .from('amazon_products')
+        .insert({
+          asin: item.ASIN,
+          title: item.Title,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error syncing product:', item.ASIN, error);
+    return false;
+  }
+}
+
+async function syncOrder(accessToken: string, order: any) {
+  try {
+    // Get order items
+    const items = await getOrderItems(accessToken, order.AmazonOrderId);
+    
+    // Sync products first
+    for (const item of items) {
+      await syncProduct(item);
+    }
+
+    // Sync order
     const { error } = await supabase.rpc('sync_amazon_order', {
       p_order_id: order.AmazonOrderId,
       p_status: order.OrderStatus
@@ -163,10 +226,16 @@ async function syncOrder(order: any) {
 
     if (error) throw error;
     
-    return true;
+    return {
+      success: true,
+      productsProcessed: items.length
+    };
   } catch (error) {
     console.error('Error syncing order:', order.AmazonOrderId, error);
-    return false;
+    return {
+      success: false,
+      productsProcessed: 0
+    };
   }
 }
 
@@ -203,15 +272,19 @@ Deno.serve(async (req) => {
 
     let successCount = 0;
     let errorCount = 0;
+    let totalProductsProcessed = 0;
 
     // Process orders in batches to avoid overwhelming the database
     const batchSize = 50;
     for (let i = 0; i < Orders.length; i += batchSize) {
       const batch = Orders.slice(i, i + batchSize);
-      const results = await Promise.all(batch.map(order => syncOrder(order)));
+      const results = await Promise.all(
+        batch.map(order => syncOrder(accessToken, order))
+      );
       
-      successCount += results.filter(Boolean).length;
-      errorCount += results.filter(r => !r).length;
+      successCount += results.filter(r => r.success).length;
+      errorCount += results.filter(r => !r.success).length;
+      totalProductsProcessed += results.reduce((sum, r) => sum + r.productsProcessed, 0);
     }
 
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
@@ -231,6 +304,7 @@ Deno.serve(async (req) => {
           totalOrders: Orders.length,
           successCount,
           errorCount,
+          totalProductsProcessed,
           startDate,
           endDate
         }
