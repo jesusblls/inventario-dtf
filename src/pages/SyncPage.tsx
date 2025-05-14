@@ -10,6 +10,8 @@ import {
   ArrowRight,
   Settings,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Loader
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -17,12 +19,13 @@ import type { AmazonProduct } from '../lib/types';
 
 interface SyncStatus {
   id: string;
-  platform: 'amazon';
   type: 'products' | 'orders';
+  start_date: string;
+  end_date: string;
+  items_processed: number;
   status: 'success' | 'error' | 'in_progress';
-  timestamp: string;
-  details: string;
-  affectedItems: number;
+  error_message: string | null;
+  created_at: string;
 }
 
 interface PlatformStats {
@@ -44,10 +47,15 @@ export function SyncPage() {
   });
   const [syncHistory, setSyncHistory] = useState<SyncStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     fetchStats();
-  }, []);
+    fetchSyncHistory();
+  }, [currentPage]);
 
   const fetchStats = async () => {
     try {
@@ -57,14 +65,49 @@ export function SyncPage() {
 
       if (productsError) throw productsError;
 
+      const { data: orders, error: ordersError } = await supabase
+        .from('amazon_orders')
+        .select('*');
+
+      if (ordersError) throw ordersError;
+
       setStats(prev => ({
         ...prev,
         totalProducts: products?.length || 0,
+        totalOrders: orders?.length || 0,
         status: 'connected'
       }));
     } catch (err) {
       console.error('Error fetching stats:', err);
       setStats(prev => ({ ...prev, status: 'error' }));
+    }
+  };
+
+  const fetchSyncHistory = async () => {
+    try {
+      setLoading(true);
+      // Get total count
+      const { count } = await supabase
+        .from('sync_history')
+        .select('*', { count: 'exact', head: true });
+
+      setTotalPages(Math.ceil((count || 0) / itemsPerPage));
+
+      // Get paginated data
+      const { data, error } = await supabase
+        .from('sync_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
+
+      if (error) throw error;
+
+      setSyncHistory(data || []);
+    } catch (err) {
+      console.error('Error fetching sync history:', err);
+      setError('Error al cargar el historial de sincronización');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -75,107 +118,22 @@ export function SyncPage() {
 
       const startStatus: SyncStatus = {
         id: crypto.randomUUID(),
-        platform: 'amazon',
         type: 'products',
+        start_date: new Date().toISOString(),
+        end_date: new Date().toISOString(),
+        items_processed: 0,
         status: 'in_progress',
-        timestamp: new Date().toISOString(),
-        details: 'Sincronizando productos de Amazon...',
-        affectedItems: 0
-      };
-      setSyncHistory(prev => [startStatus, ...prev]);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-      try {
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-products`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}), // Send empty object for full catalog sync
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
-        }
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.error || 'Error desconocido al sincronizar productos');
-        }
-
-        setSyncHistory(prev => [{
-          id: crypto.randomUUID(),
-          platform: 'amazon',
-          type: 'products',
-          status: 'success',
-          timestamp: new Date().toISOString(),
-          details: 'Sincronización de productos completada',
-          affectedItems: data.items?.length || 0
-        }, ...prev.filter(s => s.id !== startStatus.id)]);
-
-        await fetchStats();
-      } catch (err) {
-        if (err.name === 'AbortError') {
-          throw new Error('La solicitud ha excedido el tiempo de espera. Por favor, inténtalo de nuevo.');
-        }
-        throw err;
-      }
-    } catch (err) {
-      console.error('Error syncing products:', err);
-      setError('Error al sincronizar productos: ' + (err.message || 'Error desconocido'));
-      
-      setSyncHistory(prev => [{
-        id: crypto.randomUUID(),
-        platform: 'amazon',
-        type: 'products',
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        details: err.message || 'Error en la sincronización de productos',
-        affectedItems: 0
-      }, ...prev]);
-    } finally {
-      setSyncInProgress(false);
-    }
-  };
-
-  const syncOrders = async () => {
-    try {
-      setSyncInProgress(true);
-      setError(null);
-
-      const startStatus: SyncStatus = {
-        id: crypto.randomUUID(),
-        platform: 'amazon',
-        type: 'orders',
-        status: 'in_progress',
-        timestamp: new Date().toISOString(),
-        details: 'Sincronizando órdenes de Amazon...',
-        affectedItems: 0
+        error_message: null,
+        created_at: new Date().toISOString()
       };
       setSyncHistory(prev => [startStatus, ...prev]);
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
         method: 'POST',
         headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          start_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        })
+        }
       });
 
       if (!response.ok) {
@@ -183,41 +141,17 @@ export function SyncPage() {
         throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
       }
 
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
-      }
-
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.error || 'Error desconocido al sincronizar órdenes');
+        throw new Error(data.error || 'Error desconocido al sincronizar');
       }
 
-      setSyncHistory(prev => [{
-        id: crypto.randomUUID(),
-        platform: 'amazon',
-        type: 'orders',
-        status: 'success',
-        timestamp: new Date().toISOString(),
-        details: 'Sincronización de órdenes completada',
-        affectedItems: data.orders?.length || 0
-      }, ...prev.filter(s => s.id !== startStatus.id)]);
-
       await fetchStats();
+      await fetchSyncHistory();
     } catch (err) {
-      console.error('Error syncing orders:', err);
-      setError('Error al sincronizar órdenes: ' + (err.message || 'Error desconocido'));
-      
-      setSyncHistory(prev => [{
-        id: crypto.randomUUID(),
-        platform: 'amazon',
-        type: 'orders',
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        details: err.message || 'Error en la sincronización de órdenes',
-        affectedItems: 0
-      }, ...prev]);
+      console.error('Error syncing products:', err);
+      setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
     } finally {
       setSyncInProgress(false);
     }
@@ -225,7 +159,6 @@ export function SyncPage() {
 
   const handleSync = async () => {
     await syncProducts();
-    await syncOrders();
   };
 
   const getStatusIcon = (status: SyncStatus['status']) => {
@@ -319,7 +252,7 @@ export function SyncPage() {
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400">Última Sync</p>
             <p className="text-sm font-medium text-gray-900 dark:text-white">
-              {stats.lastSync ? new Date(stats.lastSync).toLocaleTimeString() : 'Nunca'}
+              {stats.lastSync ? new Date(stats.lastSync).toLocaleString() : 'Nunca'}
             </p>
           </div>
         </div>
@@ -343,7 +276,10 @@ export function SyncPage() {
                   Elementos
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Fecha
+                  Inicio
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Fin
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Detalles
@@ -351,33 +287,119 @@ export function SyncPage() {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {syncHistory.map((sync) => (
-                <tr key={sync.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(sync.status)}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900 dark:text-white capitalize">
-                      {sync.type === 'products' ? 'Productos' : 'Órdenes'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-900 dark:text-white">{sync.affectedItems}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {new Date(sync.timestamp).toLocaleString()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-500 dark:text-gray-400">{sync.details}</span>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 text-center">
+                    <Loader className="w-6 h-6 text-blue-500 animate-spin mx-auto" />
                   </td>
                 </tr>
-              ))}
+              ) : syncHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                    No hay registros de sincronización
+                  </td>
+                </tr>
+              ) : (
+                syncHistory.map((sync) => (
+                  <tr key={sync.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {getStatusIcon(sync.status)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-900 dark:text-white capitalize">
+                        {sync.type === 'products' ? 'Productos' : 'Órdenes'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-900 dark:text-white">{sync.items_processed}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(sync.start_date).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(sync.end_date).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {sync.error_message || 'Sincronización exitosa'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination */}
+        <div className="px-6 py-4 flex items-center justify-between border-t border-gray-200 dark:border-gray-700">
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+            >
+              Siguiente
+            </button>
+          </div>
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Mostrando <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> a{' '}
+                <span className="font-medium">
+                  {Math.min(currentPage * itemsPerPage, (syncHistory.length || 0))}
+                </span>{' '}
+                de <span className="font-medium">{totalPages * itemsPerPage}</span> resultados
+              </p>
+            </div>
+            <div>
+              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  <span className="sr-only">Anterior</span>
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                {/* Page numbers */}
+                {[...Array(totalPages)].map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentPage(idx + 1)}
+                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                      currentPage === idx + 1
+                        ? 'z-10 bg-blue-50 dark:bg-blue-900 border-blue-500 text-blue-600 dark:text-blue-400'
+                        : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    {idx + 1}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  <span className="sr-only">Siguiente</span>
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </nav>
+            </div>
+          </div>
         </div>
       </div>
     </div>
