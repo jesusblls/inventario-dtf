@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, 
   Store, 
@@ -9,13 +9,16 @@ import {
   AlertCircle,
   ArrowRight,
   Settings,
-  ChevronDown
+  ChevronDown,
+  Loader
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import type { AmazonProduct } from '../lib/types';
 
 interface SyncStatus {
   id: string;
-  platform: 'amazon' | 'tiendanube';
-  type: 'products' | 'orders' | 'inventory';
+  platform: 'amazon';
+  type: 'products' | 'orders';
   status: 'success' | 'error' | 'in_progress';
   timestamp: string;
   details: string;
@@ -23,73 +26,173 @@ interface SyncStatus {
 }
 
 interface PlatformStats {
-  platform: string;
   totalProducts: number;
   totalOrders: number;
-  lastSync: string;
+  lastSync: string | null;
   status: 'connected' | 'error' | 'disconnected';
 }
-
-const syncHistory: SyncStatus[] = [
-  {
-    id: '1',
-    platform: 'amazon',
-    type: 'products',
-    status: 'success',
-    timestamp: '2024-03-15T10:30:00',
-    details: 'Sincronización de productos completada',
-    affectedItems: 150
-  },
-  {
-    id: '2',
-    platform: 'tiendanube',
-    type: 'orders',
-    status: 'success',
-    timestamp: '2024-03-15T10:15:00',
-    details: 'Sincronización de órdenes completada',
-    affectedItems: 45
-  },
-  {
-    id: '3',
-    platform: 'amazon',
-    type: 'inventory',
-    status: 'error',
-    timestamp: '2024-03-15T09:45:00',
-    details: 'Error en la actualización de inventario',
-    affectedItems: 0
-  },
-  {
-    id: '4',
-    platform: 'tiendanube',
-    type: 'products',
-    status: 'in_progress',
-    timestamp: '2024-03-15T09:30:00',
-    details: 'Sincronizando productos...',
-    affectedItems: 75
-  }
-];
-
-const platformStats: PlatformStats[] = [
-  {
-    platform: 'Amazon',
-    totalProducts: 248,
-    totalOrders: 1567,
-    lastSync: '2024-03-15T10:30:00',
-    status: 'connected'
-  },
-  {
-    platform: 'Tiendanube',
-    totalProducts: 235,
-    totalOrders: 892,
-    lastSync: '2024-03-15T10:15:00',
-    status: 'connected'
-  }
-];
 
 export function SyncPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [stats, setStats] = useState<PlatformStats>({
+    totalProducts: 0,
+    totalOrders: 0,
+    lastSync: null,
+    status: 'connected'
+  });
+  const [syncHistory, setSyncHistory] = useState<SyncStatus[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      const { data: products, error: productsError } = await supabase
+        .from('amazon_products')
+        .select('*');
+
+      if (productsError) throw productsError;
+
+      setStats(prev => ({
+        ...prev,
+        totalProducts: products?.length || 0,
+        status: 'connected'
+      }));
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+      setStats(prev => ({ ...prev, status: 'error' }));
+    }
+  };
+
+  const syncProducts = async () => {
+    try {
+      setSyncInProgress(true);
+      setError(null);
+
+      // Add sync start record
+      const startStatus: SyncStatus = {
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'products',
+        status: 'in_progress',
+        timestamp: new Date().toISOString(),
+        details: 'Sincronizando productos de Amazon...',
+        affectedItems: 0
+      };
+      setSyncHistory(prev => [startStatus, ...prev]);
+
+      const response = await fetch('/functions/v1/amazon-products', {
+        headers: {
+          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || 'Error sincronizando productos');
+
+      // Update sync history with success
+      setSyncHistory(prev => [{
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'products',
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        details: 'Sincronización de productos completada',
+        affectedItems: data.items?.length || 0
+      }, ...prev.filter(s => s.id !== startStatus.id)]);
+
+      await fetchStats();
+    } catch (err) {
+      console.error('Error syncing products:', err);
+      setError('Error al sincronizar productos. Por favor, intenta de nuevo.');
+      
+      // Update sync history with error
+      setSyncHistory(prev => [{
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'products',
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        details: err.message || 'Error en la sincronización de productos',
+        affectedItems: 0
+      }, ...prev]);
+    } finally {
+      setSyncInProgress(false);
+    }
+  };
+
+  const syncOrders = async () => {
+    try {
+      setSyncInProgress(true);
+      setError(null);
+
+      // Add sync start record
+      const startStatus: SyncStatus = {
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'orders',
+        status: 'in_progress',
+        timestamp: new Date().toISOString(),
+        details: 'Sincronizando órdenes de Amazon...',
+        affectedItems: 0
+      };
+      setSyncHistory(prev => [startStatus, ...prev]);
+
+      const response = await fetch('/functions/v1/amazon-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          start_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || 'Error sincronizando órdenes');
+
+      // Update sync history with success
+      setSyncHistory(prev => [{
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'orders',
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        details: 'Sincronización de órdenes completada',
+        affectedItems: data.orders?.length || 0
+      }, ...prev.filter(s => s.id !== startStatus.id)]);
+
+      await fetchStats();
+    } catch (err) {
+      console.error('Error syncing orders:', err);
+      setError('Error al sincronizar órdenes. Por favor, intenta de nuevo.');
+      
+      // Update sync history with error
+      setSyncHistory(prev => [{
+        id: crypto.randomUUID(),
+        platform: 'amazon',
+        type: 'orders',
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        details: err.message || 'Error en la sincronización de órdenes',
+        affectedItems: 0
+      }, ...prev]);
+    } finally {
+      setSyncInProgress(false);
+    }
+  };
+
+  const handleSync = async () => {
+    await syncProducts();
+    await syncOrders();
+  };
 
   const getStatusIcon = (status: SyncStatus['status']) => {
     switch (status) {
@@ -99,17 +202,6 @@ export function SyncPage() {
         return <XCircle className="w-5 h-5 text-red-500" />;
       case 'in_progress':
         return <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />;
-    }
-  };
-
-  const getPlatformIcon = (platform: string) => {
-    switch (platform.toLowerCase()) {
-      case 'amazon':
-        return <Store className="w-6 h-6 text-orange-500" />;
-      case 'tiendanube':
-        return <Store className="w-6 h-6 text-purple-500" />;
-      default:
-        return <Store className="w-6 h-6 text-gray-500" />;
     }
   };
 
@@ -136,163 +228,126 @@ export function SyncPage() {
     }
   };
 
-  const handleSync = () => {
-    setSyncInProgress(true);
-    // Aquí iría la lógica de sincronización
-    setTimeout(() => setSyncInProgress(false), 3000);
-  };
-
   return (
-      <div className="p-4 md:p-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sincronización</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Gestiona la sincronización con Amazon</p>
+        </div>
+        <div className="flex gap-4">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow transition-all duration-200"
+          >
+            <Settings className="w-5 h-5" />
+            Configuración
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={syncInProgress}
+            className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
+              syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
+            }`}
+          >
+            <RefreshCw className={`w-5 h-5 ${syncInProgress ? 'animate-spin' : ''}`} />
+            {syncInProgress ? 'Sincronizando...' : 'Sincronizar Todo'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-300">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2" />
+            <p>{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Platform Stats */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Store className="w-6 h-6 text-orange-500" />
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Amazon</h3>
+          </div>
+          {getStatusBadge(stats.status)}
+        </div>
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sincronización</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Gestiona la sincronización con tus plataformas de venta</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Productos</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">{stats.totalProducts}</p>
           </div>
-          <div className="flex gap-4">
-            <button
-              onClick={() => setShowSettings(true)}
-              className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow transition-all duration-200"
-            >
-              <Settings className="w-5 h-5" />
-              Configuración
-            </button>
-            <button
-              onClick={handleSync}
-              disabled={syncInProgress}
-              className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
-                syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
-              }`}
-            >
-              <RefreshCw className={`w-5 h-5 ${syncInProgress ? 'animate-spin' : ''}`} />
-              {syncInProgress ? 'Sincronizando...' : 'Sincronizar Todo'}
-            </button>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Órdenes</p>
+            <p className="text-xl font-semibold text-gray-900 dark:text-white">{stats.totalOrders}</p>
           </div>
-        </div>
-
-        {/* Platform Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {platformStats.map((platform, index) => (
-            <div key={index} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  {getPlatformIcon(platform.platform)}
-                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white">{platform.platform}</h3>
-                </div>
-                {getStatusBadge(platform.status)}
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Productos</p>
-                  <p className="text-xl font-semibold text-gray-900 dark:text-white">{platform.totalProducts}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Órdenes</p>
-                  <p className="text-xl font-semibold text-gray-900 dark:text-white">{platform.totalOrders}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Última Sync</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {new Date(platform.lastSync).toLocaleTimeString()}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                <button className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium flex items-center gap-1">
-                  Ver detalles
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Sync History */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Historial de Sincronización</h3>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <select
-                    className="appearance-none bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 px-4 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={selectedPlatform}
-                    onChange={(e) => setSelectedPlatform(e.target.value)}
-                  >
-                    <option value="all">Todas las plataformas</option>
-                    <option value="amazon">Amazon</option>
-                    <option value="tiendanube">Tiendanube</option>
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Estado
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Plataforma
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Tipo
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Elementos
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Fecha
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Detalles
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {syncHistory
-                  .filter(
-                    (sync) =>
-                      selectedPlatform === 'all' || sync.platform === selectedPlatform
-                  )
-                  .map((sync) => (
-                    <tr key={sync.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          {getStatusIcon(sync.status)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          {getPlatformIcon(sync.platform)}
-                          <span className="ml-2 text-sm text-gray-900 dark:text-white capitalize">
-                            {sync.platform}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900 dark:text-white capitalize">{sync.type}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900 dark:text-white">{sync.affectedItems}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {new Date(sync.timestamp).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">{sync.details}</span>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Última Sync</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {stats.lastSync ? new Date(stats.lastSync).toLocaleTimeString() : 'Nunca'}
+            </p>
           </div>
         </div>
       </div>
+
+      {/* Sync History */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Historial de Sincronización</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Estado
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Tipo
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Elementos
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Fecha
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Detalles
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {syncHistory.map((sync) => (
+                <tr key={sync.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      {getStatusIcon(sync.status)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-900 dark:text-white capitalize">
+                      {sync.type === 'products' ? 'Productos' : 'Órdenes'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-900 dark:text-white">{sync.affectedItems}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {new Date(sync.timestamp).toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{sync.details}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
