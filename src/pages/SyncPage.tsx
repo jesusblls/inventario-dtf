@@ -30,6 +30,7 @@ interface SyncProgress {
   successCount: number;
   errorCount: number;
   currentOrderId?: string;
+  error?: string;
 }
 
 export function SyncPage() {
@@ -131,48 +132,35 @@ export function SyncPage() {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-        },
-        // Add timeout to prevent hanging requests
-        signal: AbortSignal.timeout(120000)
+        }
       });
 
-      if (!response.ok) {
-        let errorMessage;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || `Error ${response.status}: ${response.statusText}`;
-        } catch {
-          errorMessage = `Error ${response.status}: ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
+      if (!response.ok || !response.body) {
+        throw new Error(`Error en la respuesta del servidor: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Stream not available');
-      }
-
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-        try {
-          const lines = chunk.split('\n').filter(line => line.trim());
-          for (const line of lines) {
+        const lines = chunk.split('\n').filter(line => line.trim());
+
+        for (const line of lines) {
+          try {
             const data = JSON.parse(line);
-            if (data.type === 'progress') {
+            if (data.type === 'progress' || data.type === 'complete') {
               setSyncProgress(data.progress);
-            } else if (data.type === 'complete') {
-              setSyncProgress(data.progress);
-              if (!data.success) {
-                throw new Error(data.error || 'Sync failed');
+              if (data.type === 'complete' && data.progress.error) {
+                throw new Error(data.progress.error);
               }
             }
+          } catch (e) {
+            console.error('Error parsing progress:', e);
           }
-        } catch (e) {
-          console.error('Error parsing progress:', e);
         }
       }
 
@@ -270,7 +258,7 @@ export function SyncPage() {
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{
-                    width: `${(syncProgress.processedOrders / syncProgress.totalOrders) * 100}%`
+                    width: `${(syncProgress.processedOrders / Math.max(syncProgress.totalOrders, 1)) * 100}%`
                   }}
                 />
               </div>
