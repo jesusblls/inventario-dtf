@@ -48,6 +48,8 @@ async function getAccessToken() {
       }),
     });
 
+    console.log(response)
+    
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Amazon token response:', errorText);
