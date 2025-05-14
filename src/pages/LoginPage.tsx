@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle } from 'lucide-react';
 
@@ -11,15 +11,31 @@ export function LoginPage() {
   const navigate = useNavigate();
   const { signIn } = useAuth();
 
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateEmail(email)) {
+      setError('Por favor, ingresa un correo electrónico válido.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
     try {
       setError('');
       setLoading(true);
       await signIn(email, password);
       navigate('/');
     } catch (err) {
-      setError('Error al iniciar sesión. Por favor, verifica tus credenciales.');
+      setError('Correo electrónico o contraseña incorrectos. Por favor, verifica tus credenciales.');
     } finally {
       setLoading(false);
     }
@@ -72,6 +88,14 @@ export function LoginPage() {
             {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
           </button>
         </form>
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            ¿No tienes una cuenta?{' '}
+            <Link to="/signup" className="text-blue-600 hover:text-blue-700 font-medium">
+              Regístrate aquí
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );
