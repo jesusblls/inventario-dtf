@@ -13,6 +13,28 @@ import { Sidebar } from './components/Sidebar';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
+interface LayoutProps {
+  children: React.ReactNode;
+}
+
+function Layout({ children }: LayoutProps) {
+  const { signOut } = useAuth();
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+
+  return (
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} 
+        onLogout={signOut}
+      />
+      <div className="md:ml-64">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
 
@@ -28,7 +50,7 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
     return <Navigate to="/login" />;
   }
 
-  return <>{children}</>;
+  return <Layout>{children}</Layout>;
 }
 
 function App() {
