@@ -167,11 +167,11 @@ export function SyncPage() {
   const getStatusIcon = (status: SyncStatus['status']) => {
     switch (status) {
       case 'success':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
+        return <CheckCircle className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />;
       case 'error':
-        return <XCircle className="w-5 h-5 text-red-500" />;
+        return <XCircle className="w-5 h-5 text-red-500 dark:text-red-400" />;
       case 'in_progress':
-        return <RefreshCw className="w-5 h-5 text-blue-500 animate-spin" />;
+        return <RefreshCw className="w-5 h-5 text-blue-500 dark:text-blue-400 animate-spin" />;
     }
   };
 
@@ -179,7 +179,7 @@ export function SyncPage() {
     switch (status) {
       case 'connected':
         return (
-          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-300">
+          <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300">
             Conectado
           </span>
         );
