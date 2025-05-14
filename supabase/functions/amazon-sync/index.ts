@@ -78,6 +78,7 @@ async function getLastSyncDate() {
 
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
+    console.log('📦 Obteniendo órdenes desde:', createdAfter);
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
     // Format the date to ISO 8601 format without milliseconds
@@ -98,26 +99,31 @@ async function getOrders(accessToken: string, createdAfter: string) {
     });
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
+    console.log('🔍 URL de la API:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('❌ Error en respuesta de órdenes:', errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
 
     const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
 
+    console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     return {
       Orders: filteredOrders,
       payload: data.payload
     };
   } catch (error) {
+    console.error('❌ Error obteniendo órdenes:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
