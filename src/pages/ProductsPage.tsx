@@ -12,7 +12,6 @@ export function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
   useEffect(() => {
@@ -24,16 +23,37 @@ export function ProductsPage() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
+      const { data: productsData, error: productsError } = await supabase
         .from('products')
-        .select(`
-          *,
-          amazon_product:amazon_products(*)
-        `);
+        .select('*');
 
-      if (error) throw error;
+      if (productsError) throw productsError;
 
-      setProducts(data || []);
+      const productsWithAmazon = await Promise.all(
+        (productsData || []).map(async (product) => {
+          const { data: amazonProducts, error: amazonError } = await supabase
+            .from('product_amazon_products')
+            .select(`
+              amazon_products (
+                id,
+                asin,
+                title,
+                created_at,
+                updated_at
+              )
+            `)
+            .eq('product_id', product.id);
+
+          if (amazonError) throw amazonError;
+
+          return {
+            ...product,
+            amazon_products: amazonProducts?.map(ap => ap.amazon_products) || []
+          };
+        })
+      );
+
+      setProducts(productsWithAmazon);
     } catch (err) {
       console.error('Error fetching products:', err);
       setError('Error al cargar los productos. Por favor, intenta de nuevo.');
@@ -59,8 +79,11 @@ export function ProductsPage() {
   };
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.amazon_product?.title.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = 
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.amazon_products?.some(ap => 
+        ap.title.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     const matchesType = !selectedType || product.type === selectedType;
     return matchesSearch && matchesType;
   });
@@ -158,9 +181,14 @@ export function ProductsPage() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex flex-col">
                       <div className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</div>
-                      {product.amazon_product && (
+                      {product.amazon_products && product.amazon_products.length > 0 && (
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          Amazon: {product.amazon_product.title}
+                          {product.amazon_products.map((ap, index) => (
+                            <div key={ap.id}>
+                              Amazon: {ap.title}
+                              {index < product.amazon_products!.length - 1 && ', '}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

@@ -9,14 +9,13 @@ export interface AmazonProduct {
 export interface Product {
   id: string;
   name: string;
-  amazon_product_id: string | null;
   stock: number;
   size: string;
   color: string;
   type: 'regular' | 'oversize';
   created_at: string;
   updated_at: string;
-  amazon_product?: AmazonProduct;
+  amazon_products?: AmazonProduct[];
 }
 
 export interface Design {
