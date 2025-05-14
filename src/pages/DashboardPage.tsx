@@ -51,7 +51,13 @@ export function DashboardPage() {
       const lowStockCount = products?.filter(p => p.stock < 10).length || 0;
       const totalProducts = products?.length || 0;
 
-      // Get orders
+      // Get orders and total revenue
+      const { data: totalRevenue, error: revenueError } = await supabase
+        .rpc('get_total_revenue');
+
+      if (revenueError) throw revenueError;
+
+      // Get recent orders with amounts
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
         .select('*')
@@ -65,7 +71,7 @@ export function DashboardPage() {
       const recentOrders = (orders || []).slice(0, 5).map(order => ({
         id: order.id,
         orderNumber: order.amazon_order_id,
-        amount: 300, // This would need to come from order details
+        amount: order.amount || 0,
         status: order.status,
         date: order.created_at
       }));
@@ -103,9 +109,6 @@ export function DashboardPage() {
           growth: 15
         }
       ];
-
-      // Calculate total revenue (this would need order details)
-      const totalRevenue = recentOrders.reduce((sum, order) => sum + order.amount, 0);
 
       setStats({
         totalProducts,
@@ -159,9 +162,9 @@ export function DashboardPage() {
           <div className="flex items-center">
             <DollarSign className="w-6 h-6 md:w-8 md:h-8 text-green-600 dark:text-green-400" />
             <div className="ml-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Órdenes</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Ingresos Totales</p>
               <h3 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.totalOrders}
+                ${stats.totalRevenue.toLocaleString()}
               </h3>
             </div>
           </div>
@@ -198,13 +201,13 @@ export function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <span className="text-xs md:text-sm font-semibold text-gray-600 dark:text-gray-400">
-                      {product.sales} ventas
+                      ${product.revenue.toLocaleString()}
                     </span>
                   </div>
                 </div>
                 <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-200 dark:bg-gray-700">
                   <div
-                    style={{ width: `${(product.sales / stats.topProducts[0].sales) * 100}%` }}
+                    style={{ width: `${(product.revenue / stats.topProducts[0].revenue) * 100}%` }}
                     className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-600 dark:bg-blue-500"
                   ></div>
                 </div>
@@ -241,7 +244,7 @@ export function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm md:text-base font-medium text-gray-900 dark:text-white">
-                      ${order.amount.toFixed(2)}
+                      ${order.amount.toLocaleString()}
                     </p>
                     <p className="text-xs md:text-sm text-green-600 dark:text-green-400">
                       {order.status}
