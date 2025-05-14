@@ -2,16 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, 
   Store, 
-  ShoppingBag, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle,
-  ArrowRight,
   Settings,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Loader
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -96,14 +87,12 @@ export function SyncPage() {
   const fetchSyncHistory = async () => {
     try {
       setLoading(true);
-      // Get total count
       const { count } = await supabase
         .from('sync_history')
         .select('*', { count: 'exact', head: true });
 
       setTotalPages(Math.ceil((count || 0) / itemsPerPage));
 
-      // Get paginated data
       const { data, error } = await supabase
         .from('sync_history')
         .select('*')
@@ -121,13 +110,47 @@ export function SyncPage() {
     }
   };
 
+  const handleSync = async () => {
+    try {
+      setSyncInProgress(true);
+      setError(null);
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error desconocido al sincronizar');
+      }
+
+      await fetchStats();
+      await fetchSyncHistory();
+    } catch (err) {
+      console.error('Error syncing:', err);
+      setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setSyncInProgress(false);
+    }
+  };
+
   const getStatusIcon = (status: SyncStatus['status']) => {
     switch (status) {
       case 'success':
       case 'partial':
-        return <CheckCircle className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />;
+        return <RefreshCw className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />;
       case 'error':
-        return <XCircle className="w-5 h-5 text-red-500 dark:text-red-400" />;
+        return <RefreshCw className="w-5 h-5 text-red-500 dark:text-red-400" />;
       case 'in_progress':
         return <RefreshCw className="w-5 h-5 text-blue-500 dark:text-blue-400 animate-spin" />;
     }
@@ -172,7 +195,7 @@ export function SyncPage() {
             Configuración
           </button>
           <button
-            onClick={fetchSyncHistory}
+            onClick={handleSync}
             disabled={syncInProgress}
             className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
               syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
@@ -187,7 +210,6 @@ export function SyncPage() {
       {error && (
         <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-300">
           <div className="flex items-center">
-            <AlertCircle className="w-5 h-5 mr-2" />
             <p>{error}</p>
           </div>
         </div>
@@ -307,40 +329,6 @@ export function SyncPage() {
                 </span>{' '}
                 de <span className="font-medium">{totalPages * itemsPerPage}</span> resultados
               </p>
-            </div>
-            <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                >
-                  <span className="sr-only">Anterior</span>
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                {/* Page numbers */}
-                {[...Array(totalPages)].map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setCurrentPage(idx + 1)}
-                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                      currentPage === idx + 1
-                        ? 'z-10 bg-blue-50 dark:bg-blue-900 border-blue-500 text-blue-600 dark:text-blue-400'
-                        : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
-                >
-                  <span className="sr-only">Siguiente</span>
-                  <ChevronRight className="h-5 w-5" />
-                </button>
-              </nav>
             </div>
           </div>
         </div>
