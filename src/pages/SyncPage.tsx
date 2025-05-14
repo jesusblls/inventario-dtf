@@ -73,7 +73,6 @@ export function SyncPage() {
       setSyncInProgress(true);
       setError(null);
 
-      // Add sync start record
       const startStatus: SyncStatus = {
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -87,15 +86,25 @@ export function SyncPage() {
 
       const response = await fetch('/functions/v1/amazon-products', {
         headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
         }
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch (err) {
+        console.error('Invalid JSON response:', responseText);
+        throw new Error('Respuesta inválida del servidor');
+      }
 
-      if (!response.ok) throw new Error(data.error || 'Error sincronizando productos');
+      if (!response.ok) {
+        throw new Error(data.error || 'Error sincronizando productos');
+      }
 
-      // Update sync history with success
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -109,9 +118,8 @@ export function SyncPage() {
       await fetchStats();
     } catch (err) {
       console.error('Error syncing products:', err);
-      setError('Error al sincronizar productos. Por favor, intenta de nuevo.');
+      setError('Error al sincronizar productos: ' + (err.message || 'Error desconocido'));
       
-      // Update sync history with error
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -131,7 +139,6 @@ export function SyncPage() {
       setSyncInProgress(true);
       setError(null);
 
-      // Add sync start record
       const startStatus: SyncStatus = {
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -154,11 +161,20 @@ export function SyncPage() {
         })
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch (err) {
+        console.error('Invalid JSON response:', responseText);
+        throw new Error('Respuesta inválida del servidor');
+      }
 
-      if (!response.ok) throw new Error(data.error || 'Error sincronizando órdenes');
+      if (!response.ok) {
+        throw new Error(data.error || 'Error sincronizando órdenes');
+      }
 
-      // Update sync history with success
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -172,9 +188,8 @@ export function SyncPage() {
       await fetchStats();
     } catch (err) {
       console.error('Error syncing orders:', err);
-      setError('Error al sincronizar órdenes. Por favor, intenta de nuevo.');
+      setError('Error al sincronizar órdenes: ' + (err.message || 'Error desconocido'));
       
-      // Update sync history with error
       setSyncHistory(prev => [{
         id: crypto.randomUUID(),
         platform: 'amazon',
@@ -265,7 +280,6 @@ export function SyncPage() {
         </div>
       )}
 
-      {/* Platform Stats */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -292,7 +306,6 @@ export function SyncPage() {
         </div>
       </div>
 
-      {/* Sync History */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Historial de Sincronización</h3>

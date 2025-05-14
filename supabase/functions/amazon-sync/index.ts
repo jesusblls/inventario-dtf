@@ -5,8 +5,23 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json',
+};
+
 async function getAccessToken() {
   try {
+    const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN');
+    const clientId = Deno.env.get('AMAZON_CLIENT_ID');
+    const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET');
+
+    if (!refreshToken || !clientId || !clientSecret) {
+      throw new Error('Missing required Amazon API credentials');
+    }
+
     const response = await fetch('https://api.amazon.com/auth/o2/token', {
       method: 'POST',
       headers: {
@@ -14,11 +29,16 @@ async function getAccessToken() {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: Deno.env.get('AMAZON_REFRESH_TOKEN')!,
-        client_id: Deno.env.get('AMAZON_CLIENT_ID')!,
-        client_secret: Deno.env.get('AMAZON_CLIENT_SECRET')!,
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
       }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get access token: ${errorText}`);
+    }
 
     const data = await response.json();
     return data.access_token;
@@ -30,12 +50,18 @@ async function getAccessToken() {
 
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
+    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    
+    if (!marketplaceId) {
+      throw new Error('Missing required Amazon marketplace configuration');
+    }
+
     const headers = {
       'x-amz-access-token': accessToken,
     };
 
     const params = new URLSearchParams({
-      MarketplaceIds: Deno.env.get('AMAZON_MARKETPLACE_ID')!,
+      MarketplaceIds: marketplaceId,
       CreatedAfter: createdAfter,
     });
 
@@ -43,6 +69,11 @@ async function getOrders(accessToken: string, createdAfter: string) {
       `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`,
       { headers }
     );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get orders: ${errorText}`);
+    }
 
     return await response.json();
   } catch (error) {
@@ -53,55 +84,73 @@ async function getOrders(accessToken: string, createdAfter: string) {
 
 Deno.serve(async (req) => {
   try {
-    // Handle CORS
     if (req.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-      });
+      return new Response(null, { headers: corsHeaders });
     }
 
-    // Only allow POST requests
     if (req.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response(
+        JSON.stringify({ error: 'Method not allowed' }), 
+        { status: 405, headers: corsHeaders }
+      );
     }
 
-    const { start_date = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const start_date = body.start_date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    // Get Amazon access token
     const accessToken = await getAccessToken();
-
-    // Get orders from Amazon
     const orders = await getOrders(accessToken, start_date);
 
-    // Process each order
+    const results = [];
     for (const order of orders.Orders || []) {
       for (const item of order.OrderItems || []) {
-        // Sync order with our database
-        await supabase.rpc('sync_amazon_order', {
-          p_asin: item.ASIN,
-          p_quantity: item.QuantityOrdered,
-        });
+        try {
+          const { error } = await supabase.rpc('sync_amazon_order', {
+            p_asin: item.ASIN,
+            p_quantity: item.QuantityOrdered,
+          });
+
+          if (error) {
+            console.error('Error syncing order:', error);
+            results.push({ 
+              orderId: order.AmazonOrderId, 
+              asin: item.ASIN, 
+              error: error.message 
+            });
+          } else {
+            results.push({ 
+              orderId: order.AmazonOrderId, 
+              asin: item.ASIN, 
+              success: true 
+            });
+          }
+        } catch (error) {
+          console.error('Error processing order:', error);
+          results.push({ 
+            orderId: order.AmazonOrderId, 
+            asin: item.ASIN, 
+            error: error.message 
+          });
+        }
       }
     }
 
-    return new Response(JSON.stringify({ success: true, orders }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        orders: orders.Orders || [], 
+        results 
+      }), 
+      { headers: corsHeaders }
+    );
   } catch (error) {
     console.error('Error processing request:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error.message || 'An unexpected error occurred' 
+      }), 
+      { status: 500, headers: corsHeaders }
+    );
   }
 });
