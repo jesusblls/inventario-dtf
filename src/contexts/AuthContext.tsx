@@ -25,7 +25,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching user role:', error);
+        return 'user';
+      }
+
       return data?.role || 'user';
     } catch (error) {
       console.error('Error fetching user role:', error);
@@ -34,11 +38,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let mounted = true;
+
     async function initializeAuth() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (session?.user) {
+        if (session?.user && mounted) {
           setUser(session.user);
           const role = await fetchUserRole(session.user.id);
           setUserRole(role);
@@ -46,14 +52,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
     initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+      
       setLoading(true);
+      
       if (session?.user) {
         setUser(session.user);
         const role = await fetchUserRole(session.user.id);
@@ -62,10 +73,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setUserRole(null);
       }
+      
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -76,12 +91,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -89,12 +104,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setLoading(true);
       const { error } = await supabase.auth.signOut();
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
     } catch (error) {
       console.error('Sign out error:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
