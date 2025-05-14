@@ -24,11 +24,6 @@ export function LoginPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-
     try {
       setError('');
       setLoading(true);
