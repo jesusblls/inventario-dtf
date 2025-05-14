@@ -18,15 +18,15 @@ function Layout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
 
   return (
-    <div className="min-h-screen flex">
+    <div className="flex h-screen">
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         onLogout={signOut}
       />
-      <div className="flex-1 bg-gray-100 dark:bg-gray-900">
+      <main className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900">
         {children}
-      </div>
+      </main>
     </div>
   );
 }
