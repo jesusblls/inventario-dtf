@@ -193,6 +193,8 @@ Deno.serve(async (req) => {
     // Get access token
     const accessToken = await getAccessToken();
 
+    console.log(accessToken);
+
     let items = [];
     let results = [];
 
