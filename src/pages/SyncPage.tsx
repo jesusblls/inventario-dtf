@@ -85,6 +85,7 @@ export function SyncPage() {
       setSyncHistory(prev => [startStatus, ...prev]);
 
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-products`, {
+        method: 'POST', // Added POST method
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
