@@ -109,8 +109,11 @@ async function getOrders(accessToken: string, createdAfter: string) {
 
 Deno.serve(async (req) => {
   try {
+    // Always include CORS headers in the response
+    const responseHeaders = { ...corsHeaders };
+
     if (req.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: responseHeaders });
     }
 
     if (req.method !== 'POST') {
@@ -119,7 +122,7 @@ Deno.serve(async (req) => {
           success: false, 
           error: 'Method not allowed' 
         }), 
-        { status: 405, headers: corsHeaders }
+        { status: 405, headers: responseHeaders }
       );
     }
 
@@ -132,7 +135,7 @@ Deno.serve(async (req) => {
           success: false,
           error: error.message
         }),
-        { status: 500, headers: corsHeaders }
+        { status: 500, headers: responseHeaders }
       );
     }
 
@@ -145,7 +148,7 @@ Deno.serve(async (req) => {
           success: false, 
           error: 'Invalid JSON in request body' 
         }), 
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
@@ -200,7 +203,7 @@ Deno.serve(async (req) => {
         results,
         timestamp: new Date().toISOString()
       }), 
-      { headers: corsHeaders }
+      { headers: responseHeaders }
     );
   } catch (error) {
     console.error('Error processing request:', error);
