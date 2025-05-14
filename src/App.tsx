@@ -22,15 +22,15 @@ function Layout({ children }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="min-h-screen flex bg-gray-100 dark:bg-gray-900">
       <Sidebar 
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         onLogout={signOut}
       />
-      <div className="md:ml-64">
+      <main className="flex-1 md:ml-64">
         {children}
-      </div>
+      </main>
     </div>
   );
 }
