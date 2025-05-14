@@ -83,7 +83,6 @@ async function getLastSyncDate() {
     return data;
   } catch (error) {
     console.error('❌ Error obteniendo última fecha de sincronización:', error);
-    // Return a date from 2023 as fallback
     return '2023-01-01T00:00:00Z';
   }
 }
@@ -93,7 +92,6 @@ async function getOrders(accessToken: string, createdAfter: string) {
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
-    // Format the date to ISO 8601 format without milliseconds
     const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
     
     const headers = {
@@ -102,7 +100,6 @@ async function getOrders(accessToken: string, createdAfter: string) {
       'Content-Type': 'application/json',
     };
 
-    // Ensure marketplaceId is a string and properly formatted
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId!.trim(),
       CreatedAfter: formattedDate,
@@ -142,9 +139,6 @@ async function getOrders(accessToken: string, createdAfter: string) {
 
 async function getOrderItems(accessToken: string, orderId: string) {
   try {
-    console.log(`📦 Procesando orden ${orderId}`);
-    console.log('📝 Obteniendo detalles de items...');
-    
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -152,24 +146,17 @@ async function getOrderItems(accessToken: string, orderId: string) {
     };
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
-    console.log('🔍 URL de la API:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
-      console.error(`❌ Error HTTP: ${response.status} ${response.statusText}`);
       const errorText = await response.text();
-      console.error('❌ Detalles del error:', errorText);
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log(`✅ Items obtenidos:`, JSON.stringify(data.payload.OrderItems, null, 2));
-    console.log(`📊 Total de items: ${data.payload.OrderItems.length}`);
-    
     return data.payload;
   } catch (error) {
-    console.error(`❌ Error procesando items de la orden ${orderId}:`, error);
     throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
