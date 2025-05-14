@@ -35,6 +35,7 @@ export function LoginPage() {
       await signIn(email, password);
       navigate('/');
     } catch (err) {
+      console.error('Login error:', err);
       setError('Correo electrónico o contraseña incorrectos. Por favor, verifica tus credenciales.');
     } finally {
       setLoading(false);
