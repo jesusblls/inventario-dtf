@@ -108,7 +108,14 @@ export function SyncPage() {
       setSyncInProgress(true);
       setError(null);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('Supabase URL not configured');
+      }
+
+      const functionUrl = `${supabaseUrl}/functions/v1/amazon-sync`;
+      
+      const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -117,7 +124,8 @@ export function SyncPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`Error en la respuesta del servidor: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error en la respuesta del servidor: ${response.status}`);
       }
 
       await fetchStats();
@@ -125,6 +133,7 @@ export function SyncPage() {
     } catch (err) {
       console.error('Error syncing:', err);
       setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
+      setStats(prev => ({ ...prev, status: 'error' }));
     } finally {
       setSyncInProgress(false);
     }
