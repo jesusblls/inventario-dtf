@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Product, AmazonProduct, Design } from '../lib/types';
+import type { Product, AmazonProduct } from '../lib/types';
 
 interface ProductModalProps {
   product?: Product;
@@ -17,15 +17,11 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
   const [color, setColor] = useState(product?.color || '');
   const [type, setType] = useState<'regular' | 'oversize'>(product?.type || 'regular');
   const [amazonProductId, setAmazonProductId] = useState(product?.amazon_product_id || '');
-  const [designId, setDesignId] = useState('');
-  
   const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([]);
-  const [designs, setDesigns] = useState<Design[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetchAmazonProducts();
-    fetchDesigns();
   }, []);
 
   const fetchAmazonProducts = async () => {
@@ -39,19 +35,6 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
     }
 
     setAmazonProducts(data);
-  };
-
-  const fetchDesigns = async () => {
-    const { data, error } = await supabase
-      .from('designs')
-      .select('*');
-    
-    if (error) {
-      console.error('Error fetching designs:', error);
-      return;
-    }
-
-    setDesigns(data);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -107,7 +90,7 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-            {product ? 'Editar Producto' : 'Agregar Nuevo Producto'}
+            {product ? 'Editar Producto' : 'Agregar Nueva Prenda'}
           </h2>
           <button
             onClick={onClose}
@@ -126,70 +109,19 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Nombre del Producto
+              Nombre de la Prenda
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Playera Regular"
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Producto de Amazon
-              </label>
-              <select
-                value={amazonProductId}
-                onChange={(e) => setAmazonProductId(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Seleccionar producto</option>
-                {amazonProducts.map((ap) => (
-                  <option key={ap.id} value={ap.id}>
-                    {ap.title} ({ap.asin})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Diseño DTF
-              </label>
-              <select
-                value={designId}
-                onChange={(e) => setDesignId(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Seleccionar diseño</option>
-                {designs.map((design) => (
-                  <option key={design.id} value={design.id}>
-                    {design.name} (Stock: {design.stock})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Stock
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={stock}
-                onChange={(e) => setStock(parseInt(e.target.value))}
-                required
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Tipo
@@ -204,9 +136,7 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
                 <option value="oversize">Oversize</option>
               </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Talla
@@ -227,7 +157,9 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
                 <option value="3XL">3XL</option>
               </select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Color
@@ -236,10 +168,43 @@ export function ProductModal({ product, onClose, onSave }: ProductModalProps) {
                 type="text"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
+                placeholder="Ej: Negro"
                 required
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Stock
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={stock}
+                onChange={(e) => setStock(parseInt(e.target.value))}
+                required
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Producto de Amazon
+            </label>
+            <select
+              value={amazonProductId}
+              onChange={(e) => setAmazonProductId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Seleccionar producto</option>
+              {amazonProducts.map((ap) => (
+                <option key={ap.id} value={ap.id}>
+                  {ap.title} ({ap.asin})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">
