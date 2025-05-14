@@ -116,11 +116,18 @@ async function getAllProducts(accessToken: string) {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'x-amz-marketplace-id': marketplaceId,
     };
 
-    // Add keywords parameter to satisfy the API requirement
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${marketplaceId}&keywords=*`;
+    // Build the query parameters
+    const queryParams = new URLSearchParams({
+      marketplaceIds: marketplaceId!,
+      // Add a default search term to satisfy the keywords requirement
+      keywords: 'all',
+      // Limit results to avoid overwhelming the API
+      pageSize: '20',
+    });
+
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?${queryParams.toString()}`;
     
     console.log('Fetching catalog items from:', apiUrl);
     
