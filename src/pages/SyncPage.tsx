@@ -78,8 +78,6 @@ export function SyncPage() {
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1);
 
       if (ordersError) throw ordersError;
 
