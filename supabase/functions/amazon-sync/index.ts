@@ -76,12 +76,14 @@ async function getLastSyncDate() {
   }
 }
 
-async function getOrders(accessToken: string, createdAfter: string) {
+async function getOrders(accessToken: string, createdAfter: string, nextToken?: string) {
   try {
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
+    if (nextToken) {
+      console.log('🔄 Usando NextToken:', nextToken);
+    }
+
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    
-    // Format the date to ISO 8601 format without milliseconds
     const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
     
     const headers = {
@@ -90,13 +92,16 @@ async function getOrders(accessToken: string, createdAfter: string) {
       'Content-Type': 'application/json',
     };
 
-    // Ensure marketplaceId is a string and properly formatted
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId!.trim(),
       CreatedAfter: formattedDate,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
     });
+
+    if (nextToken) {
+      params.append('NextToken', nextToken);
+    }
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
     console.log('🔍 URL de la API:', apiUrl);
@@ -118,6 +123,20 @@ async function getOrders(accessToken: string, createdAfter: string) {
     ) || [];
 
     console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
+    
+    // If there's a next token, recursively get more orders
+    if (data.payload?.NextToken) {
+      console.log('📑 Obteniendo siguiente página de órdenes...');
+      const nextPageResult = await getOrders(accessToken, createdAfter, data.payload.NextToken);
+      return {
+        Orders: [...filteredOrders, ...nextPageResult.Orders],
+        payload: {
+          ...data.payload,
+          Orders: [...(data.payload.Orders || []), ...(nextPageResult.payload?.Orders || [])]
+        }
+      };
+    }
+
     return {
       Orders: filteredOrders,
       payload: data.payload
