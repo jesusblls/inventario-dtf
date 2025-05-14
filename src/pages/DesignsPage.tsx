@@ -21,14 +21,38 @@ export function DesignsPage() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase
+      const { data: designsData, error: designsError } = await supabase
         .from('designs')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (designsError) throw designsError;
 
-      setDesigns(data || []);
+      const designsWithAmazon = await Promise.all(
+        (designsData || []).map(async (design) => {
+          const { data: amazonProducts, error: amazonError } = await supabase
+            .from('design_amazon_products')
+            .select(`
+              amazon_products (
+                id,
+                asin,
+                title,
+                created_at,
+                updated_at
+              )
+            `)
+            .eq('design_id', design.id);
+
+          if (amazonError) throw amazonError;
+
+          return {
+            ...design,
+            amazon_products: amazonProducts?.map(ap => ap.amazon_products) || []
+          };
+        })
+      );
+
+      setDesigns(designsWithAmazon);
     } catch (err) {
       console.error('Error fetching designs:', err);
       setError('Error al cargar los diseños. Por favor, intenta de nuevo.');
@@ -38,7 +62,10 @@ export function DesignsPage() {
   };
 
   const filteredDesigns = designs.filter(design =>
-    design.name.toLowerCase().includes(searchTerm.toLowerCase())
+    design.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    design.amazon_products?.some(ap => 
+      ap.title.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
   if (loading) {
@@ -94,7 +121,7 @@ export function DesignsPage() {
             >
               <div className="p-4">
                 <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-2">{design.name}</h3>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col gap-2">
                   <span className={`text-sm font-medium ${
                     design.stock > 10 
                       ? 'text-green-600 dark:text-green-400'
@@ -104,6 +131,16 @@ export function DesignsPage() {
                   }`}>
                     Stock: {design.stock} unidades
                   </span>
+                  {design.amazon_products && design.amazon_products.length > 0 && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {design.amazon_products.map((ap, index) => (
+                        <div key={ap.id} className="truncate">
+                          Amazon: {ap.title}
+                          {index < design.amazon_products!.length - 1 && ', '}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <span className="text-sm text-gray-500 dark:text-gray-400">
                     {new Date(design.created_at).toLocaleDateString()}
                   </span>

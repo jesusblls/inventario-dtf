@@ -24,6 +24,8 @@ export interface Design {
   stock: number;
   created_at: string;
   updated_at: string;
+  owner_id: string;
+  amazon_products?: AmazonProduct[];
 }
 
 export interface ProductDesign {

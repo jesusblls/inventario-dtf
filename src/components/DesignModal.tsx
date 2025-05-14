@@ -14,13 +14,17 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [name, setName] = useState(design?.name || '');
   const [stock, setStock] = useState(design?.stock || 0);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedAmazonProducts, setSelectedAmazonProducts] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetchProducts();
+    fetchAmazonProducts();
     if (design) {
       fetchDesignProducts();
+      fetchDesignAmazonProducts();
     }
   }, [design]);
 
@@ -28,10 +32,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select(`
-          *,
-          amazon_product:amazon_products(*)
-        `)
+        .select('*')
         .order('name');
       
       if (error) throw error;
@@ -40,6 +41,22 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     } catch (err) {
       console.error('Error fetching products:', err);
       setError('Error al cargar productos');
+    }
+  };
+
+  const fetchAmazonProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('amazon_products')
+        .select('*')
+        .order('title');
+      
+      if (error) throw error;
+      
+      setAmazonProducts(data || []);
+    } catch (err) {
+      console.error('Error fetching Amazon products:', err);
+      setError('Error al cargar productos de Amazon');
     }
   };
 
@@ -58,6 +75,24 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     } catch (err) {
       console.error('Error fetching design products:', err);
       setError('Error al cargar productos asociados');
+    }
+  };
+
+  const fetchDesignAmazonProducts = async () => {
+    if (!design?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('design_amazon_products')
+        .select('amazon_product_id')
+        .eq('design_id', design.id);
+
+      if (error) throw error;
+
+      setSelectedAmazonProducts(data.map(dap => dap.amazon_product_id));
+    } catch (err) {
+      console.error('Error fetching design Amazon products:', err);
+      setError('Error al cargar productos de Amazon asociados');
     }
   };
 
@@ -81,15 +116,15 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
         if (updateError) throw updateError;
 
         // Update product associations
-        const { error: deleteError } = await supabase
+        const { error: deleteProductError } = await supabase
           .from('product_designs')
           .delete()
           .eq('design_id', design.id);
 
-        if (deleteError) throw deleteError;
+        if (deleteProductError) throw deleteProductError;
 
         if (selectedProducts.length > 0) {
-          const { error: insertError } = await supabase
+          const { error: insertProductError } = await supabase
             .from('product_designs')
             .insert(
               selectedProducts.map(productId => ({
@@ -98,7 +133,28 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
               }))
             );
 
-          if (insertError) throw insertError;
+          if (insertProductError) throw insertProductError;
+        }
+
+        // Update Amazon product associations
+        const { error: deleteAmazonError } = await supabase
+          .from('design_amazon_products')
+          .delete()
+          .eq('design_id', design.id);
+
+        if (deleteAmazonError) throw deleteAmazonError;
+
+        if (selectedAmazonProducts.length > 0) {
+          const { error: insertAmazonError } = await supabase
+            .from('design_amazon_products')
+            .insert(
+              selectedAmazonProducts.map(amazonProductId => ({
+                design_id: design.id,
+                amazon_product_id: amazonProductId
+              }))
+            );
+
+          if (insertAmazonError) throw insertAmazonError;
         }
       } else {
         // Create new design
@@ -115,7 +171,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
 
         // Create product associations
         if (designData && selectedProducts.length > 0) {
-          const { error: relationError } = await supabase
+          const { error: productRelationError } = await supabase
             .from('product_designs')
             .insert(
               selectedProducts.map(productId => ({
@@ -124,7 +180,21 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
               }))
             );
 
-          if (relationError) throw relationError;
+          if (productRelationError) throw productRelationError;
+        }
+
+        // Create Amazon product associations
+        if (designData && selectedAmazonProducts.length > 0) {
+          const { error: amazonRelationError } = await supabase
+            .from('design_amazon_products')
+            .insert(
+              selectedAmazonProducts.map(amazonProductId => ({
+                design_id: designData.id,
+                amazon_product_id: amazonProductId
+              }))
+            );
+
+          if (amazonRelationError) throw amazonRelationError;
         }
       }
 
@@ -144,6 +214,15 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
         return prev.filter(id => id !== productId);
       }
       return [...prev, productId];
+    });
+  };
+
+  const handleAmazonProductSelect = (amazonProductId: string) => {
+    setSelectedAmazonProducts(prev => {
+      if (prev.includes(amazonProductId)) {
+        return prev.filter(id => id !== amazonProductId);
+      }
+      return [...prev, amazonProductId];
     });
   };
 
@@ -214,11 +293,31 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
                   />
                   <div className="ml-3">
                     <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{product.name}</div>
-                    {product.amazon_product && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        Amazon: {product.amazon_product.title}
-                      </div>
-                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Productos de Amazon Asociados
+            </label>
+            <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
+              {amazonProducts.map((ap) => (
+                <label
+                  key={ap.id}
+                  className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedAmazonProducts.includes(ap.id)}
+                    onChange={() => handleAmazonProductSelect(ap.id)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <div className="ml-3">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">{ap.title}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">ASIN: {ap.asin}</div>
                   </div>
                 </label>
               ))}
@@ -246,4 +345,3 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
       </div>
     </div>
   );
-}
