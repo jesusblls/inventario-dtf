@@ -16,7 +16,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
 
   const fetchUserRole = async (userId: string) => {
     try {
@@ -53,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         if (mounted) {
           setLoading(false);
-          setInitialized(true);
         }
       }
     };
@@ -68,13 +66,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const role = await fetchUserRole(session.user.id);
         if (mounted) {
           setUserRole(role);
+          setLoading(false);
         }
       } else {
         setUser(null);
         setUserRole(null);
-      }
-
-      if (mounted && initialized) {
         setLoading(false);
       }
     });
@@ -83,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [initialized]);
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -97,6 +93,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -108,6 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Sign out error:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
