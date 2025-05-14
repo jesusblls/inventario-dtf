@@ -160,7 +160,7 @@ async function getOrderItems(accessToken: string, orderId: string) {
   }
 }
 
-async function saveSyncHistory(startDate: string, endDate: string, ordersProcessed: number, productsProcessed: number, status: string, errorMessage?: string) {
+async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
   try {
     const { error } = await supabase
       .from('sync_history')
@@ -168,7 +168,7 @@ async function saveSyncHistory(startDate: string, endDate: string, ordersProcess
         type: 'orders',
         start_date: startDate,
         end_date: endDate,
-        items_processed: productsProcessed, // Usar el número real de productos procesados
+        items_processed: itemsProcessed,
         status,
         error_message: errorMessage
       });
@@ -199,9 +199,9 @@ async function syncProduct(item: any) {
         });
 
       if (insertError) throw insertError;
-      return true; // Producto nuevo creado
     }
-    return false; // Producto ya existía
+
+    return true;
   } catch (error) {
     console.error('Error syncing product:', item.ASIN, error);
     return false;
@@ -214,8 +214,9 @@ async function syncOrder(accessToken: string, order: any) {
     const items = await getOrderItems(accessToken, order.AmazonOrderId);
     
     // Sync products first
-    const productResults = await Promise.all(items.map(item => syncProduct(item)));
-    const newProductsCount = productResults.filter(result => result).length;
+    for (const item of items) {
+      await syncProduct(item);
+    }
 
     // Sync order
     const { error } = await supabase.rpc('sync_amazon_order', {
@@ -227,13 +228,13 @@ async function syncOrder(accessToken: string, order: any) {
     
     return {
       success: true,
-      newProductsCount
+      productsProcessed: items.length
     };
   } catch (error) {
     console.error('Error syncing order:', order.AmazonOrderId, error);
     return {
       success: false,
-      newProductsCount: 0
+      productsProcessed: 0
     };
   }
 }
@@ -271,7 +272,7 @@ Deno.serve(async (req) => {
 
     let successCount = 0;
     let errorCount = 0;
-    let totalNewProducts = 0;
+    let totalProductsProcessed = 0;
 
     // Process orders in batches to avoid overwhelming the database
     const batchSize = 50;
@@ -283,7 +284,7 @@ Deno.serve(async (req) => {
       
       successCount += results.filter(r => r.success).length;
       errorCount += results.filter(r => !r.success).length;
-      totalNewProducts += results.reduce((sum, r) => sum + r.newProductsCount, 0);
+      totalProductsProcessed += results.reduce((sum, r) => sum + r.productsProcessed, 0);
     }
 
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
@@ -292,7 +293,6 @@ Deno.serve(async (req) => {
       startDate,
       endDate,
       Orders.length,
-      totalNewProducts,
       syncStatus,
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
@@ -304,7 +304,7 @@ Deno.serve(async (req) => {
           totalOrders: Orders.length,
           successCount,
           errorCount,
-          totalNewProducts,
+          totalProductsProcessed,
           startDate,
           endDate
         }
@@ -317,7 +317,6 @@ Deno.serve(async (req) => {
     await saveSyncHistory(
       new Date().toISOString(),
       new Date().toISOString(),
-      0,
       0,
       'error',
       error.message
