@@ -84,41 +84,55 @@ export function SyncPage() {
       };
       setSyncHistory(prev => [startStatus, ...prev]);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-products`, {
-        method: 'POST', // Added POST method
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-products`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}), // Send empty object for full catalog sync
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
         }
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Error desconocido al sincronizar productos');
+        }
+
+        setSyncHistory(prev => [{
+          id: crypto.randomUUID(),
+          platform: 'amazon',
+          type: 'products',
+          status: 'success',
+          timestamp: new Date().toISOString(),
+          details: 'Sincronización de productos completada',
+          affectedItems: data.items?.length || 0
+        }, ...prev.filter(s => s.id !== startStatus.id)]);
+
+        await fetchStats();
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error('La solicitud ha excedido el tiempo de espera. Por favor, inténtalo de nuevo.');
+        }
+        throw err;
       }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Respuesta inesperada del servidor. Por favor, inténtalo de nuevo más tarde.');
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error desconocido al sincronizar productos');
-      }
-
-      setSyncHistory(prev => [{
-        id: crypto.randomUUID(),
-        platform: 'amazon',
-        type: 'products',
-        status: 'success',
-        timestamp: new Date().toISOString(),
-        details: 'Sincronización de productos completada',
-        affectedItems: data.items?.length || 0
-      }, ...prev.filter(s => s.id !== startStatus.id)]);
-
-      await fetchStats();
     } catch (err) {
       console.error('Error syncing products:', err);
       setError('Error al sincronizar productos: ' + (err.message || 'Error desconocido'));

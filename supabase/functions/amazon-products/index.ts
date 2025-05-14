@@ -108,8 +108,39 @@ async function getOrderItems(accessToken: string, orderId: string) {
   }
 }
 
+async function getAllProducts(accessToken: string) {
+  try {
+    const headers = {
+      'x-amz-access-token': accessToken,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/v0/items?MarketplaceId=${marketplaceId}`;
+    
+    const response = await fetch(apiUrl, { 
+      method: 'GET',
+      headers 
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Amazon catalog response:', errorText);
+      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.items || [];
+  } catch (error) {
+    console.error('Error getting catalog items:', error);
+    throw new Error(`Catalog items fetch failed: ${error.message}`);
+  }
+}
+
 Deno.serve(async (req) => {
   try {
+    // Handle CORS preflight
     if (req.method === 'OPTIONS') {
       return new Response(null, { 
         status: 200,
@@ -130,6 +161,7 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate environment variables
     try {
       await validateEnvironment();
     } catch (error) {
@@ -145,73 +177,86 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get order ID from request body
-    const body = await req.json();
-    const orderId = body.orderId;
+    // Get access token
+    const accessToken = await getAccessToken();
 
-    if (!orderId) {
+    let items = [];
+    let results = [];
+
+    try {
+      // Try to parse request body
+      const body = await req.text();
+      const jsonBody = body ? JSON.parse(body) : {};
+      
+      // If orderId is provided, get specific order items
+      if (jsonBody.orderId) {
+        const orderData = await getOrderItems(accessToken, jsonBody.orderId);
+        items = orderData.items;
+      } else {
+        // Otherwise, get all catalog items
+        items = await getAllProducts(accessToken);
+      }
+
+      // Process items
+      if (items && Array.isArray(items)) {
+        for (const item of items) {
+          try {
+            if (!item.asin) {
+              console.warn('Item missing ASIN:', item);
+              continue;
+            }
+
+            const { error, data } = await supabase
+              .from('amazon_products')
+              .upsert({
+                asin: item.asin,
+                title: item.title || 'Unknown Title',
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'asin',
+              });
+
+            if (error) {
+              console.error('Error upserting item:', error);
+              results.push({ asin: item.asin, error: error.message });
+            } else {
+              results.push({ asin: item.asin, success: true });
+            }
+          } catch (error) {
+            console.error('Error processing item:', error);
+            results.push({ 
+              asin: item.asin, 
+              error: `Failed to process item: ${error.message}` 
+            });
+          }
+        }
+      }
+
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Order ID is required'
-        }),
+        JSON.stringify({ 
+          success: true, 
+          items: items || [], 
+          results,
+          timestamp: new Date().toISOString()
+        }), 
+        { headers: corsHeaders }
+      );
+    } catch (error) {
+      console.error('Error processing request:', error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: error.message || 'An unexpected error occurred',
+          timestamp: new Date().toISOString()
+        }), 
         { 
-          status: 400, 
+          status: 500, 
           headers: corsHeaders 
         }
       );
     }
-
-    const accessToken = await getAccessToken();
-    const { items, payload } = await getOrderItems(accessToken, orderId);
-
-    const results = [];
-    if (items && Array.isArray(items)) {
-      for (const item of items) {
-        try {
-          if (!item.asin) {
-            console.warn('Item missing ASIN:', item);
-            continue;
-          }
-
-          const { error, data } = await supabase
-            .from('amazon_products')
-            .upsert({
-              asin: item.asin,
-              title: item.title || 'Unknown Title',
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: 'asin',
-            });
-
-          if (error) {
-            console.error('Error upserting item:', error);
-            results.push({ asin: item.asin, error: error.message });
-          } else {
-            results.push({ asin: item.asin, success: true });
-          }
-        } catch (error) {
-          console.error('Error processing item:', error);
-          results.push({ 
-            asin: item.asin, 
-            error: `Failed to process item: ${error.message}` 
-          });
-        }
-      }
-    }
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        items: items || [], 
-        results,
-        payload,
-        timestamp: new Date().toISOString()
-      }), 
-      { headers: corsHeaders }
-    );
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error in main handler:', error);
     return new Response(
       JSON.stringify({ 
         success: false, 
