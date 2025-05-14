@@ -66,29 +66,16 @@ async function getAccessToken() {
   }
 }
 
-async function getOrders(accessToken: string) {
+async function getOrderItems(accessToken: string, orderId: string) {
   try {
-    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
-    // Get orders from the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const params = new URLSearchParams({
-      MarketplaceIds: marketplaceId!,
-      CreatedAfter: thirtyDaysAgo.toISOString(),
-      MaxResultsPerPage: '100',
-      OrderItemsBuyerInfoList: 'true'
-    });
-
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
-    console.log('Fetching orders from:', apiUrl);
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+    console.log('Fetching order items from:', apiUrl);
 
     const response = await fetch(apiUrl, { 
       method: 'GET',
@@ -97,38 +84,27 @@ async function getOrders(accessToken: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Amazon orders response:', errorText);
-      throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
+      console.error('Amazon order items response:', errorText);
+      throw new Error(`Failed to get order items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('Orders API response:', data);
+    console.log('Order Items API response:', data);
 
-    // Extract unique products from orders
-    const productsMap = new Map();
-    
-    for (const order of data.Orders || []) {
-      if (order.OrderItems) {
-        for (const item of order.OrderItems) {
-          if (item.ASIN && item.Title) {
-            productsMap.set(item.ASIN, {
-              asin: item.ASIN,
-              title: item.Title
-            });
-          }
-        }
-      }
-    }
-
-    const items = Array.from(productsMap.values());
+    // Extract products from order items
+    const items = data.OrderItems?.map(item => ({
+      asin: item.ASIN,
+      title: item.Title,
+      quantity: item.QuantityOrdered
+    })) || [];
 
     return {
       items,
       payload: data
     };
   } catch (error) {
-    console.error('Error getting orders:', error);
-    throw new Error(`Orders fetch failed: ${error.message}`);
+    console.error('Error getting order items:', error);
+    throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
 
@@ -141,7 +117,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (req.method !== 'GET') {
+    if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -169,8 +145,25 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get order ID from request body
+    const body = await req.json();
+    const orderId = body.orderId;
+
+    if (!orderId) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Order ID is required'
+        }),
+        { 
+          status: 400, 
+          headers: corsHeaders 
+        }
+      );
+    }
+
     const accessToken = await getAccessToken();
-    const { items, payload } = await getOrders(accessToken);
+    const { items, payload } = await getOrderItems(accessToken, orderId);
 
     const results = [];
     if (items && Array.isArray(items)) {

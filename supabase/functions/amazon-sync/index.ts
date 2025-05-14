@@ -80,8 +80,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
       MarketplaceIds: marketplaceId!,
       CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
-      OrderStatuses: 'Shipped,Unshipped',
-      OrderItemsBuyerInfoList: 'true'
+      OrderStatuses: 'Shipped,Unshipped'
     });
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
@@ -106,6 +105,34 @@ async function getOrders(accessToken: string, createdAfter: string) {
   } catch (error) {
     console.error('Error getting orders:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
+  }
+}
+
+async function syncProducts(orderId: string) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/amazon-products`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ orderId })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to sync products: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error(data.error || 'Unknown error syncing products');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error syncing products:', error);
+    throw error;
   }
 }
 
@@ -156,41 +183,41 @@ Deno.serve(async (req) => {
     const { Orders, payload } = await getOrders(accessToken, start_date);
 
     const results = [];
+    const productResults = [];
+
     for (const order of Orders) {
-      for (const item of order.OrderItems || []) {
-        try {
-          if (!item.ASIN || !item.QuantityOrdered) {
-            console.warn('Invalid order item:', item);
-            continue;
-          }
+      try {
+        // First sync products from this order
+        const productSync = await syncProducts(order.AmazonOrderId);
+        productResults.push({
+          orderId: order.AmazonOrderId,
+          products: productSync.results
+        });
 
-          const { error } = await supabase.rpc('sync_amazon_order', {
-            p_asin: item.ASIN,
-            p_quantity: item.QuantityOrdered,
-          });
+        // Then sync order details
+        const { error } = await supabase.rpc('sync_amazon_order', {
+          p_order_id: order.AmazonOrderId,
+          p_status: order.OrderStatus
+        });
 
-          if (error) {
-            console.error('Error syncing order:', error);
-            results.push({ 
-              orderId: order.AmazonOrderId, 
-              asin: item.ASIN, 
-              error: error.message 
-            });
-          } else {
-            results.push({ 
-              orderId: order.AmazonOrderId, 
-              asin: item.ASIN, 
-              success: true 
-            });
-          }
-        } catch (error) {
-          console.error('Error processing order:', error);
+        if (error) {
+          console.error('Error syncing order:', error);
           results.push({ 
             orderId: order.AmazonOrderId, 
-            asin: item.ASIN, 
-            error: `Failed to process order: ${error.message}` 
+            error: error.message 
+          });
+        } else {
+          results.push({ 
+            orderId: order.AmazonOrderId, 
+            success: true 
           });
         }
+      } catch (error) {
+        console.error('Error processing order:', error);
+        results.push({ 
+          orderId: order.AmazonOrderId, 
+          error: `Failed to process order: ${error.message}` 
+        });
       }
     }
 
@@ -199,6 +226,7 @@ Deno.serve(async (req) => {
         success: true, 
         orders: Orders, 
         results,
+        productResults,
         payload,
         timestamp: new Date().toISOString()
       }), 
