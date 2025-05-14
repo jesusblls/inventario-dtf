@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Loader } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Design } from '../lib/types';
+import type { Design, AmazonProduct } from '../lib/types';
 
 interface DesignModalProps {
   design?: Design;
@@ -13,7 +13,29 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(design?.name || '');
   const [stock, setStock] = useState(design?.stock || 0);
+  const [amazonProductId, setAmazonProductId] = useState('');
+  const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([]);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchAmazonProducts();
+  }, []);
+
+  const fetchAmazonProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('amazon_products')
+        .select('*')
+        .order('title');
+      
+      if (error) throw error;
+      
+      setAmazonProducts(data || []);
+    } catch (err) {
+      console.error('Error fetching Amazon products:', err);
+      setError('Error al cargar productos de Amazon');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,14 +57,28 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
         if (updateError) throw updateError;
       } else {
         // Create new design
-        const { error: insertError } = await supabase
+        const { data: designData, error: insertError } = await supabase
           .from('designs')
           .insert({
             name,
             stock,
-          });
+          })
+          .select()
+          .single();
 
         if (insertError) throw insertError;
+
+        // If Amazon product was selected, create product_designs relationship
+        if (amazonProductId && designData) {
+          const { error: relationError } = await supabase
+            .from('product_designs')
+            .insert({
+              product_id: amazonProductId,
+              design_id: designData.id
+            });
+
+          if (relationError) throw relationError;
+        }
       }
 
       onSave();
@@ -102,6 +138,24 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Producto de Amazon
+            </label>
+            <select
+              value={amazonProductId}
+              onChange={(e) => setAmazonProductId(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Seleccionar producto</option>
+              {amazonProducts.map((ap) => (
+                <option key={ap.id} value={ap.id}>
+                  {ap.title} ({ap.asin})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex justify-end space-x-3 pt-4">
