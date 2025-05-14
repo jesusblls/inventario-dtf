@@ -205,6 +205,26 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
   return !!data;
 }
 
+async function saveOrder(order: any) {
+  try {
+    const orderAmount = order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0;
+
+    const { error } = await supabase
+      .from('amazon_orders')
+      .insert({
+        amazon_order_id: order.AmazonOrderId,
+        status: order.OrderStatus,
+        amount: orderAmount,
+        last_sync_date: new Date().toISOString()
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving order:', error);
+    throw error;
+  }
+}
+
 async function saveOrderItems(orderId: string, items: any[]) {
   try {
     const orderItems = items.map(item => ({
@@ -218,8 +238,76 @@ async function saveOrderItems(orderId: string, items: any[]) {
       .insert(orderItems);
 
     if (error) throw error;
+
+    // Update inventory for related products and designs
+    for (const item of orderItems) {
+      await updateInventory(item.asin, item.quantity_ordered);
+    }
   } catch (error) {
     console.error('Error saving order items:', error);
+    throw error;
+  }
+}
+
+async function updateInventory(asin: string, quantity: number) {
+  try {
+    // Get product relationships
+    const { data: relationships, error: relError } = await supabase
+      .from('product_amazon_products')
+      .select(`
+        product_id,
+        amazon_product_id,
+        products (id, stock),
+        amazon_products!amazon_product_id (id)
+      `)
+      .eq('amazon_products.asin', asin);
+
+    if (relError) throw relError;
+
+    // Update product stock
+    for (const rel of relationships || []) {
+      if (rel.products?.id) {
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({ 
+            stock: Math.max(0, (rel.products.stock || 0) - quantity),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', rel.products.id);
+
+        if (updateError) throw updateError;
+      }
+    }
+
+    // Get design relationships
+    const { data: designRels, error: designRelError } = await supabase
+      .from('design_amazon_products')
+      .select(`
+        design_id,
+        amazon_product_id,
+        designs (id, stock),
+        amazon_products!amazon_product_id (id)
+      `)
+      .eq('amazon_products.asin', asin);
+
+    if (designRelError) throw designRelError;
+
+    // Update design stock
+    for (const rel of designRels || []) {
+      if (rel.designs?.id) {
+        const { error: updateError } = await supabase
+          .from('designs')
+          .update({ 
+            stock: Math.max(0, (rel.designs.stock || 0) - quantity),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', rel.designs.id);
+
+        if (updateError) throw updateError;
+      }
+    }
+  } catch (error) {
+    console.error('Error updating inventory:', error);
     throw error;
   }
 }
@@ -255,8 +343,6 @@ Deno.serve(async (req) => {
     const { Orders } = await getOrders(accessToken);
 
     const results = [];
-    const orderItems = [];
-    const products = new Set();
     let successCount = 0;
     let errorCount = 0;
     const totalOrders = Orders.length;
@@ -270,60 +356,38 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const items = await getOrderItems(accessToken, order.AmazonOrderId);
-        
-        orderItems.push({
-          orderId: order.AmazonOrderId,
-          items: items.OrderItems
-        });
+        // Save order first
+        await saveOrder(order);
 
-        // Save order items first
+        // Then get and save order items
+        const items = await getOrderItems(accessToken, order.AmazonOrderId);
         await saveOrderItems(order.AmazonOrderId, items.OrderItems);
 
+        // Save new products if needed
         for (const item of items.OrderItems) {
-          if (!products.has(item.ASIN)) {
-            products.add(item.ASIN);
-            
-            const exists = await checkProductExists(item.ASIN);
-            if (!exists) {
-              const { error: productError } = await supabase
-                .from('amazon_products')
-                .insert({
-                  asin: item.ASIN,
-                  title: item.Title,
-                  updated_at: new Date().toISOString(),
-                });
+          const exists = await checkProductExists(item.ASIN);
+          if (!exists) {
+            const { error: productError } = await supabase
+              .from('amazon_products')
+              .insert({
+                asin: item.ASIN,
+                title: item.Title,
+                updated_at: new Date().toISOString(),
+              });
 
-              if (productError) {
-                errorCount++;
-              } else {
-                successCount++;
-              }
+            if (productError) {
+              errorCount++;
+            } else {
+              successCount++;
             }
           }
         }
 
-        const orderAmount = order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0;
-
-        const { error: orderError } = await supabase.rpc('sync_amazon_order', {
-          p_order_id: order.AmazonOrderId,
-          p_status: order.OrderStatus,
-          p_amount: orderAmount
+        successCount++;
+        results.push({ 
+          orderId: order.AmazonOrderId, 
+          success: true 
         });
-
-        if (orderError) {
-          errorCount++;
-          results.push({ 
-            orderId: order.AmazonOrderId, 
-            error: orderError.message 
-          });
-        } else {
-          successCount++;
-          results.push({ 
-            orderId: order.AmazonOrderId, 
-            success: true 
-          });
-        }
       } catch (error) {
         errorCount++;
         results.push({ 
@@ -346,9 +410,6 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        orders: Orders, 
-        orderItems,
-        products: Array.from(products),
         results,
         summary: {
           startDate,
