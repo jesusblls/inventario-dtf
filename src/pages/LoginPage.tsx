@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { AlertCircle } from 'lucide-react';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -29,7 +30,8 @@ export function LoginPage() {
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-8">
         <h2 className="text-3xl font-bold text-center text-gray-800 dark:text-white mb-8">DTF Manager</h2>
         {error && (
-          <div className="mb-4 p-4 text-sm text-red-700 bg-red-100 dark:bg-red-900 dark:text-red-300 rounded-lg">
+          <div className="mb-6 p-4 text-sm text-red-700 bg-red-100 dark:bg-red-900/50 dark:text-red-300 rounded-lg flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             {error}
           </div>
         )}
@@ -59,11 +61,6 @@ export function LoginPage() {
               placeholder="••••••••"
               required
             />
-          </div>
-          <div className="flex items-center justify-end">
-            <a href="#" className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-              ¿Olvidaste tu contraseña?
-            </a>
           </div>
           <button
             type="submit"
