@@ -31,7 +31,13 @@ export function LoginPage() {
       navigate('/');
     } catch (err) {
       console.error('Login error:', err);
-      setError('Credenciales inválidas. Por favor verifica tu correo y contraseña.');
+      setError(
+        'Error al iniciar sesión. Por favor, verifica que:\n\n' +
+        '1. Hayas confirmado tu correo electrónico después del registro\n' +
+        '2. Tu correo electrónico y contraseña sean correctos\n' +
+        '3. Si olvidaste tu contraseña, usa la opción "¿Olvidaste tu contraseña?"\n\n' +
+        'Si el problema persiste, contacta al soporte técnico.'
+      );
     } finally {
       setLoading(false);
     }
@@ -44,7 +50,7 @@ export function LoginPage() {
         {error && (
           <div className="mb-6 p-4 text-sm text-red-700 bg-red-100 dark:bg-red-900/50 dark:text-red-300 rounded-lg flex items-start">
             <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span className="whitespace-pre-line">{error}</span>
           </div>
         )}
         <form className="space-y-6" onSubmit={handleSubmit}>
