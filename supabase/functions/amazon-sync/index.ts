@@ -112,7 +112,6 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     
-    // If there's a next token, recursively get more orders
     if (data.payload?.NextToken) {
       console.log('📑 Obteniendo siguiente página de órdenes...');
       const nextPageResult = await getOrders(accessToken, data.payload.NextToken);
@@ -185,7 +184,7 @@ async function checkProductExists(asin: string): Promise<boolean> {
     .eq('asin', asin)
     .single();
 
-  if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+  if (error && error.code !== 'PGRST116') {
     throw error;
   }
 
@@ -204,6 +203,25 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
   }
 
   return !!data;
+}
+
+async function saveOrderItems(orderId: string, items: any[]) {
+  try {
+    const orderItems = items.map(item => ({
+      amazon_order_id: orderId,
+      asin: item.ASIN,
+      quantity_ordered: parseInt(item.QuantityOrdered || '1', 10)
+    }));
+
+    const { error } = await supabase
+      .from('amazon_order_items')
+      .insert(orderItems);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving order items:', error);
+    throw error;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -258,6 +276,9 @@ Deno.serve(async (req) => {
           orderId: order.AmazonOrderId,
           items: items.OrderItems
         });
+
+        // Save order items first
+        await saveOrderItems(order.AmazonOrderId, items.OrderItems);
 
         for (const item of items.OrderItems) {
           if (!products.has(item.ASIN)) {
