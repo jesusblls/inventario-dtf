@@ -123,8 +123,8 @@ export function SyncPage() {
           'Authorization': `Bearer ${anonKey}`,
           'Content-Type': 'application/json',
         },
-        // Add retry mechanism with exponential backoff
-        signal: AbortSignal.timeout(30000) // 30 second timeout
+        // Increased timeout to 60 seconds
+        signal: AbortSignal.timeout(60000)
       });
 
       if (!response.ok) {
@@ -143,10 +143,10 @@ export function SyncPage() {
     } catch (err) {
       console.error('Error syncing:', err);
       
-      // Implement retry logic with exponential backoff
+      // Implement retry logic with exponential backoff and jitter
       if (retryCount < 3) {
-        const backoffDelay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-        console.log(`Retrying sync in ${backoffDelay}ms... (Attempt ${retryCount + 1}/3)`);
+        const backoffDelay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+        console.log(`Retrying sync in ${Math.round(backoffDelay)}ms... (Attempt ${retryCount + 1}/3)`);
         
         setTimeout(() => {
           handleSync(retryCount + 1);
