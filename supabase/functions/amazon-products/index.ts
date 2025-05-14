@@ -66,22 +66,29 @@ async function getAccessToken() {
   }
 }
 
-async function getCatalogItems(accessToken: string) {
+async function getOrders(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-
+    
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
+    // Get orders from the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     const params = new URLSearchParams({
-      MarketplaceId: marketplaceId!,
+      MarketplaceIds: marketplaceId!,
+      CreatedAfter: thirtyDaysAgo.toISOString(),
+      MaxResultsPerPage: '100',
+      OrderItemsBuyerInfoList: 'true'
     });
 
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/v0/items?${params}`;
-    console.log('Fetching catalog items from:', apiUrl);
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
+    console.log('Fetching orders from:', apiUrl);
 
     const response = await fetch(apiUrl, { 
       method: 'GET',
@@ -90,28 +97,38 @@ async function getCatalogItems(accessToken: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Amazon catalog response:', errorText);
-      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText} - ${errorText}`);
+      console.error('Amazon orders response:', errorText);
+      throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('Catalog API response:', data);
+    console.log('Orders API response:', data);
 
-    // Transform the response to match our expected format
-    const items = (data.payload || []).map((item: any) => ({
-      asin: item.asin || item.Identifiers?.MarketplaceASIN?.ASIN,
-      summaries: [{
-        titleValue: item.AttributeSets?.[0]?.Title || item.title || 'Unknown Title'
-      }]
-    })).filter((item: any) => item.asin);
+    // Extract unique products from orders
+    const productsMap = new Map();
+    
+    for (const order of data.Orders || []) {
+      if (order.OrderItems) {
+        for (const item of order.OrderItems) {
+          if (item.ASIN && item.Title) {
+            productsMap.set(item.ASIN, {
+              asin: item.ASIN,
+              title: item.Title
+            });
+          }
+        }
+      }
+    }
+
+    const items = Array.from(productsMap.values());
 
     return {
       items,
       payload: data
     };
   } catch (error) {
-    console.error('Error getting catalog items:', error);
-    throw new Error(`Catalog fetch failed: ${error.message}`);
+    console.error('Error getting orders:', error);
+    throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
 
@@ -153,7 +170,7 @@ Deno.serve(async (req) => {
     }
 
     const accessToken = await getAccessToken();
-    const { items, payload } = await getCatalogItems(accessToken);
+    const { items, payload } = await getOrders(accessToken);
 
     const results = [];
     if (items && Array.isArray(items)) {
@@ -168,7 +185,7 @@ Deno.serve(async (req) => {
             .from('amazon_products')
             .upsert({
               asin: item.asin,
-              title: item.summaries?.[0]?.titleValue || 'Unknown Title',
+              title: item.title || 'Unknown Title',
               updated_at: new Date().toISOString(),
             }, {
               onConflict: 'asin',
