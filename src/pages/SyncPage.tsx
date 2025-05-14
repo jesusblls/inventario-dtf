@@ -6,16 +6,11 @@ import {
   Loader
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { AmazonProduct } from '../lib/types';
 
 interface SyncStatus {
   id: string;
-  type: 'products' | 'orders';
-  start_date: string;
-  end_date: string;
-  items_processed: number;
   status: 'success' | 'error' | 'in_progress' | 'partial';
-  error_message: string | null;
+  items_processed: number;
   created_at: string;
 }
 
@@ -27,9 +22,7 @@ interface PlatformStats {
 }
 
 export function SyncPage() {
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
   const [syncInProgress, setSyncInProgress] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [stats, setStats] = useState<PlatformStats>({
     totalProducts: 0,
     totalOrders: 0,
@@ -124,14 +117,7 @@ export function SyncPage() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error en la respuesta del servidor: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error desconocido al sincronizar');
+        throw new Error(`Error en la respuesta del servidor: ${response.status}`);
       }
 
       await fetchStats();
@@ -186,25 +172,16 @@ export function SyncPage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Sincronización</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Gestiona la sincronización con Amazon</p>
         </div>
-        <div className="flex gap-4">
-          <button
-            onClick={() => setShowSettings(true)}
-            className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow transition-all duration-200"
-          >
-            <Settings className="w-5 h-5" />
-            Configuración
-          </button>
-          <button
-            onClick={handleSync}
-            disabled={syncInProgress}
-            className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
-              syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
-            }`}
-          >
-            <RefreshCw className={`w-5 h-5 ${syncInProgress ? 'animate-spin' : ''}`} />
-            {syncInProgress ? 'Sincronizando...' : 'Sincronizar Todo'}
-          </button>
-        </div>
+        <button
+          onClick={handleSync}
+          disabled={syncInProgress}
+          className={`bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200 ${
+            syncInProgress ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
+          }`}
+        >
+          <RefreshCw className={`w-5 h-5 ${syncInProgress ? 'animate-spin' : ''}`} />
+          {syncInProgress ? 'Sincronizando...' : 'Sincronizar Todo'}
+        </button>
       </div>
 
       {error && (
@@ -253,10 +230,7 @@ export function SyncPage() {
                   Estado
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Órdenes Procesadas
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Productos Procesados
+                  Órdenes
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Fecha
@@ -266,13 +240,13 @@ export function SyncPage() {
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center">
+                  <td colSpan={3} className="px-6 py-4 text-center">
                     <Loader className="w-6 h-6 text-blue-500 animate-spin mx-auto" />
                   </td>
                 </tr>
               ) : syncHistory.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={3} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     No hay registros de sincronización
                   </td>
                 </tr>
@@ -283,9 +257,6 @@ export function SyncPage() {
                       <div className="flex items-center">
                         {getStatusIcon(sync.status)}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-gray-900 dark:text-white">{sync.items_processed}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-gray-900 dark:text-white">{sync.items_processed}</span>
