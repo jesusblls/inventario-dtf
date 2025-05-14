@@ -345,3 +345,4 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
       </div>
     </div>
   );
+}
