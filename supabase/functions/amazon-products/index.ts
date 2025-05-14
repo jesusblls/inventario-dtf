@@ -95,12 +95,10 @@ async function getCatalogItems(accessToken: string) {
     }
 
     const data = await response.json();
-    if (!data.items) {
-      console.warn('No items found in catalog response');
-      return { items: [] };
-    }
-
-    return data;
+    return {
+      items: data.items || [],
+      payload: data
+    };
   } catch (error) {
     console.error('Error getting catalog items:', error);
     throw new Error(`Catalog fetch failed: ${error.message}`);
@@ -108,14 +106,11 @@ async function getCatalogItems(accessToken: string) {
 }
 
 Deno.serve(async (req) => {
-  // Always include CORS headers in the response
-  const responseHeaders = { ...corsHeaders };
-
   try {
     if (req.method === 'OPTIONS') {
       return new Response(null, { 
         status: 200,
-        headers: responseHeaders 
+        headers: corsHeaders 
       });
     }
 
@@ -127,7 +122,7 @@ Deno.serve(async (req) => {
         }), 
         { 
           status: 405, 
-          headers: responseHeaders 
+          headers: corsHeaders 
         }
       );
     }
@@ -143,17 +138,17 @@ Deno.serve(async (req) => {
         }),
         { 
           status: 500, 
-          headers: responseHeaders 
+          headers: corsHeaders 
         }
       );
     }
 
     const accessToken = await getAccessToken();
-    const catalogItems = await getCatalogItems(accessToken);
+    const { items, payload } = await getCatalogItems(accessToken);
 
     const results = [];
-    if (catalogItems.items && Array.isArray(catalogItems.items)) {
-      for (const item of catalogItems.items) {
+    if (items && Array.isArray(items)) {
+      for (const item of items) {
         try {
           if (!item.asin) {
             console.warn('Item missing ASIN:', item);
@@ -189,14 +184,12 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        items: catalogItems.items || [], 
+        items: items || [], 
         results,
+        payload,
         timestamp: new Date().toISOString()
       }), 
-      { 
-        status: 200,
-        headers: responseHeaders 
-      }
+      { headers: corsHeaders }
     );
   } catch (error) {
     console.error('Error processing request:', error);
@@ -208,7 +201,7 @@ Deno.serve(async (req) => {
       }), 
       { 
         status: 500, 
-        headers: responseHeaders 
+        headers: corsHeaders 
       }
     );
   }

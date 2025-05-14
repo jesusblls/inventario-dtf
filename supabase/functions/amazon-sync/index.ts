@@ -82,13 +82,10 @@ async function getOrders(accessToken: string, createdAfter: string) {
       CreatedAfter: createdAfter,
     });
 
-    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/orders/v0/orders`;
+    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/orders/v0/orders?${params}`;
     console.log('Fetching orders from:', apiUrl);
 
-    const response = await fetch(
-      `${apiUrl}?${params}`,
-      { headers }
-    );
+    const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -97,12 +94,10 @@ async function getOrders(accessToken: string, createdAfter: string) {
     }
 
     const data = await response.json();
-    if (!data.Orders) {
-      console.warn('No orders found in response');
-      return { Orders: [] };
-    }
-
-    return data;
+    return {
+      Orders: data.Orders || [],
+      payload: data
+    };
   } catch (error) {
     console.error('Error getting orders:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
@@ -110,14 +105,11 @@ async function getOrders(accessToken: string, createdAfter: string) {
 }
 
 Deno.serve(async (req) => {
-  // Always include CORS headers in the response
-  const responseHeaders = { ...corsHeaders };
-
   try {
     if (req.method === 'OPTIONS') {
       return new Response(null, { 
         status: 200,
-        headers: responseHeaders 
+        headers: corsHeaders 
       });
     }
 
@@ -129,7 +121,7 @@ Deno.serve(async (req) => {
         }), 
         { 
           status: 405, 
-          headers: responseHeaders 
+          headers: corsHeaders 
         }
       );
     }
@@ -148,7 +140,7 @@ Deno.serve(async (req) => {
         }), 
         { 
           status: 400, 
-          headers: responseHeaders 
+          headers: corsHeaders 
         }
       );
     }
@@ -156,10 +148,10 @@ Deno.serve(async (req) => {
     const start_date = body.start_date || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     const accessToken = await getAccessToken();
-    const orders = await getOrders(accessToken, start_date);
+    const { Orders, payload } = await getOrders(accessToken, start_date);
 
     const results = [];
-    for (const order of orders.Orders || []) {
+    for (const order of Orders) {
       for (const item of order.OrderItems || []) {
         try {
           if (!item.ASIN || !item.QuantityOrdered) {
@@ -200,14 +192,12 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        orders: orders.Orders || [], 
+        orders: Orders, 
         results,
+        payload,
         timestamp: new Date().toISOString()
       }), 
-      { 
-        status: 200,
-        headers: responseHeaders 
-      }
+      { headers: corsHeaders }
     );
   } catch (error) {
     console.error('Error processing request:', error);
@@ -219,7 +209,7 @@ Deno.serve(async (req) => {
       }), 
       { 
         status: 500, 
-        headers: responseHeaders 
+        headers: corsHeaders 
       }
     );
   }
