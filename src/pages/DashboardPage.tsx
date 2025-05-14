@@ -22,6 +22,14 @@ interface DashboardStats {
   lowStockCount: number;
 }
 
+interface TopProduct {
+  asin: string;
+  title: string;
+  total_quantity: number;
+  total_revenue: number;
+  growth: number;
+}
+
 export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -76,39 +84,18 @@ export function DashboardPage() {
         date: order.created_at
       }));
 
-      // Calculate top products (this would need more detailed data)
-      const topProducts = [
-        {
-          name: 'Playera F1 Racing',
-          sales: 156,
-          revenue: 62244,
-          growth: 45
-        },
-        {
-          name: 'Playera Calavera Mexicana',
-          sales: 128,
-          revenue: 44672,
-          growth: 32
-        },
-        {
-          name: 'Playera Dragon Ball',
-          sales: 98,
-          revenue: 34202,
-          growth: -8
-        },
-        {
-          name: 'Playera Street Art',
-          sales: 112,
-          revenue: 39088,
-          growth: 25
-        },
-        {
-          name: 'Playera Gaming Pro',
-          sales: 89,
-          revenue: 31061,
-          growth: 15
-        }
-      ];
+      // Get top products
+      const { data: topProductsData, error: topProductsError } = await supabase
+        .rpc('get_top_products');
+
+      if (topProductsError) throw topProductsError;
+
+      const topProducts = (topProductsData || []).map((product: TopProduct) => ({
+        name: product.title,
+        sales: product.total_quantity,
+        revenue: product.total_revenue,
+        growth: product.growth || 0
+      }));
 
       setStats({
         totalProducts,
