@@ -28,6 +28,13 @@ async function validateEnvironment() {
   if (missingVars.length > 0) {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
+
+  // Validate region format
+  const validRegions = ['na', 'eu', 'fe', 'mx'];
+  const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
+  if (!validRegions.includes(region!)) {
+    throw new Error(`Invalid AMAZON_REGION. Must be one of: ${validRegions.join(', ')}`);
+  }
 }
 
 async function getAccessToken() {
@@ -70,7 +77,13 @@ async function getAccessToken() {
 async function getCatalogItems(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase() || 'na';
+    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
+    
+    // Validate region before making the request
+    const validRegions = ['na', 'eu', 'fe', 'mx'];
+    if (!validRegions.includes(region!)) {
+      throw new Error(`Invalid region: ${region}. Must be one of: ${validRegions.join(', ')}`);
+    }
     
     // Get the current timestamp in ISO format
     const timestamp = new Date().toISOString();
@@ -93,6 +106,8 @@ async function getCatalogItems(accessToken: string) {
     // Updated endpoint to use the Catalog Items API v2022-04-01
     const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/2022-04-01/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
+    console.log('Using region:', region);
+    console.log('Using marketplace ID:', marketplaceId);
 
     const response = await fetch(apiUrl, { 
       method: 'GET',
