@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader } from 'lucide-react';
+import { X, Loader, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Design, AmazonProduct } from '../lib/types';
 
@@ -15,6 +15,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [stock, setStock] = useState(design?.stock || 0);
   const [selectedAmazonProducts, setSelectedAmazonProducts] = useState<string[]>([]);
   const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -144,6 +145,11 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     });
   };
 
+  const filteredAmazonProducts = amazonProducts.filter(product =>
+    product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.asin.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -197,8 +203,18 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Productos de Amazon Asociados
             </label>
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Buscar productos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
             <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
-              {amazonProducts.map((ap) => (
+              {filteredAmazonProducts.map((ap) => (
                 <label
                   key={ap.id}
                   className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
@@ -215,6 +231,11 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
                   </div>
                 </label>
               ))}
+              {filteredAmazonProducts.length === 0 && (
+                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                  No se encontraron productos
+                </div>
+              )}
             </div>
           </div>
 
