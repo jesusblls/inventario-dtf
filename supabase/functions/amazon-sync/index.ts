@@ -49,7 +49,6 @@ async function getAccessToken() {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
       throw new Error(`Failed to get access token: ${response.status} ${response.statusText}`);
     }
 
@@ -78,6 +77,11 @@ async function getLastSyncDate() {
 
 async function getOrders(accessToken: string, createdAfter: string, nextToken?: string) {
   try {
+    console.log('📦 Obteniendo órdenes desde:', createdAfter);
+    if (nextToken) {
+      console.log('🔄 Usando NextToken:', nextToken);
+    }
+
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
     
@@ -99,23 +103,29 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
     }
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
+    console.log('🔍 URL de la API:', apiUrl);
 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('❌ Error en respuesta de órdenes:', errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
 
     const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
+
+    console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     
     // If there's a next token, recursively get more orders
     if (data.payload?.NextToken) {
+      console.log('📑 Obteniendo siguiente página de órdenes...');
       const nextPageResult = await getOrders(accessToken, createdAfter, data.payload.NextToken);
       return {
         Orders: [...filteredOrders, ...nextPageResult.Orders],
@@ -131,6 +141,7 @@ async function getOrders(accessToken: string, createdAfter: string, nextToken?: 
       payload: data.payload
     };
   } catch (error) {
+    console.error('❌ Error obteniendo órdenes:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
@@ -144,18 +155,19 @@ async function getOrderItems(accessToken: string, orderId: string) {
     };
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+    console.log('🔍 Obteniendo items para orden:', orderId);
 
     const response = await fetch(apiUrl, { headers });
 
     if (!response.ok) {
-      const errorText = await response.text();
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log('📦 Items de la orden:', JSON.stringify(data.payload?.OrderItems || [], null, 2));
     return data.payload?.OrderItems || [];
   } catch (error) {
-    console.error(`Error fetching items for order ${orderId}:`, error);
+    console.error(`❌ Error obteniendo items para orden ${orderId}:`, error);
     return [];
   }
 }
@@ -181,6 +193,8 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
 
 async function syncProduct(item: any) {
   try {
+    console.log('🔄 Sincronizando producto:', item.ASIN);
+    
     // Check if product exists
     const { data: existingProduct } = await supabase
       .from('amazon_products')
@@ -189,6 +203,7 @@ async function syncProduct(item: any) {
       .single();
 
     if (!existingProduct) {
+      console.log('➕ Creando nuevo producto:', item.ASIN);
       // Create new product
       const { error: insertError } = await supabase
         .from('amazon_products')
@@ -198,24 +213,35 @@ async function syncProduct(item: any) {
           updated_at: new Date().toISOString(),
         });
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('❌ Error creando producto:', insertError);
+        throw insertError;
+      }
+      console.log('✅ Producto creado:', item.ASIN);
+    } else {
+      console.log('✅ Producto ya existe:', item.ASIN);
     }
 
     return true;
   } catch (error) {
-    console.error('Error syncing product:', item.ASIN, error);
+    console.error('❌ Error sincronizando producto:', item.ASIN, error);
     return false;
   }
 }
 
 async function syncOrder(accessToken: string, order: any) {
   try {
+    console.log('🔄 Sincronizando orden:', order.AmazonOrderId);
+    
     // Get order items
     const items = await getOrderItems(accessToken, order.AmazonOrderId);
+    console.log(`📦 ${items.length} items encontrados para orden:`, order.AmazonOrderId);
     
     // Sync products first
+    let productsProcessed = 0;
     for (const item of items) {
-      await syncProduct(item);
+      const success = await syncProduct(item);
+      if (success) productsProcessed++;
     }
 
     // Sync order
@@ -224,14 +250,18 @@ async function syncOrder(accessToken: string, order: any) {
       p_status: order.OrderStatus
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error sincronizando orden:', error);
+      throw error;
+    }
     
+    console.log('✅ Orden sincronizada:', order.AmazonOrderId);
     return {
       success: true,
-      productsProcessed: items.length
+      productsProcessed
     };
   } catch (error) {
-    console.error('Error syncing order:', order.AmazonOrderId, error);
+    console.error('❌ Error sincronizando orden:', order.AmazonOrderId, error);
     return {
       success: false,
       productsProcessed: 0
@@ -267,24 +297,37 @@ Deno.serve(async (req) => {
     const startDate = lastSyncDate;
     const endDate = new Date().toISOString();
 
+    console.log('🕒 Última sincronización:', startDate);
+    console.log('🕒 Sincronizando hasta:', endDate);
+
     const accessToken = await getAccessToken();
     const { Orders } = await getOrders(accessToken, startDate);
+
+    console.log(`📦 Total de órdenes a procesar: ${Orders.length}`);
 
     let successCount = 0;
     let errorCount = 0;
     let totalProductsProcessed = 0;
 
     // Process orders in batches to avoid overwhelming the database
-    const batchSize = 50;
+    const batchSize = 10;
     for (let i = 0; i < Orders.length; i += batchSize) {
       const batch = Orders.slice(i, i + batchSize);
+      console.log(`🔄 Procesando lote ${i/batchSize + 1} de ${Math.ceil(Orders.length/batchSize)}`);
+      
       const results = await Promise.all(
         batch.map(order => syncOrder(accessToken, order))
       );
       
-      successCount += results.filter(r => r.success).length;
-      errorCount += results.filter(r => !r.success).length;
-      totalProductsProcessed += results.reduce((sum, r) => sum + r.productsProcessed, 0);
+      const batchSuccess = results.filter(r => r.success).length;
+      const batchErrors = results.filter(r => !r.success).length;
+      const batchProducts = results.reduce((sum, r) => sum + r.productsProcessed, 0);
+      
+      successCount += batchSuccess;
+      errorCount += batchErrors;
+      totalProductsProcessed += batchProducts;
+
+      console.log(`✅ Lote completado - Éxitos: ${batchSuccess}, Errores: ${batchErrors}, Productos: ${batchProducts}`);
     }
 
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
@@ -296,6 +339,14 @@ Deno.serve(async (req) => {
       syncStatus,
       errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
     );
+
+    console.log('✅ Sincronización completada');
+    console.log(`📊 Resumen:
+      - Órdenes totales: ${Orders.length}
+      - Órdenes exitosas: ${successCount}
+      - Órdenes con error: ${errorCount}
+      - Productos procesados: ${totalProductsProcessed}
+    `);
 
     return new Response(
       JSON.stringify({ 
@@ -312,7 +363,7 @@ Deno.serve(async (req) => {
       { headers: corsHeaders }
     );
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('❌ Error en sincronización:', error);
 
     await saveSyncHistory(
       new Date().toISOString(),
