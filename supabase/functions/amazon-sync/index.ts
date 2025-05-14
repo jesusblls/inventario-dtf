@@ -190,6 +190,20 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
   }
 }
 
+async function checkProductExists(asin: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('amazon_products')
+    .select('id')
+    .eq('asin', asin)
+    .single();
+
+  if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+    throw error;
+  }
+
+  return !!data;
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method === 'OPTIONS') {
@@ -240,20 +254,22 @@ Deno.serve(async (req) => {
           if (!products.has(item.ASIN)) {
             products.add(item.ASIN);
             
-            const { error: productError } = await supabase
-              .from('amazon_products')
-              .upsert({
-                asin: item.ASIN,
-                title: item.Title,
-                updated_at: new Date().toISOString(),
-              }, {
-                onConflict: 'asin'
-              });
+            // Check if product already exists before inserting
+            const exists = await checkProductExists(item.ASIN);
+            if (!exists) {
+              const { error: productError } = await supabase
+                .from('amazon_products')
+                .insert({
+                  asin: item.ASIN,
+                  title: item.Title,
+                  updated_at: new Date().toISOString(),
+                });
 
-            if (productError) {
-              errorCount++;
-            } else {
-              successCount++;
+              if (productError) {
+                errorCount++;
+              } else {
+                successCount++;
+              }
             }
           }
         }
