@@ -31,7 +31,7 @@ export function LoginPage() {
       navigate('/');
     } catch (err) {
       console.error('Login error:', err);
-      setError('Error al iniciar sesión. Por favor verifica tus credenciales.');
+      setError('Credenciales inválidas. Por favor verifica tu correo y contraseña.');
     } finally {
       setLoading(false);
     }
