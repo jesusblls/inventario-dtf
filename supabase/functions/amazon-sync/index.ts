@@ -83,7 +83,10 @@ async function getLastSyncDate() {
     return data;
   } catch (error) {
     console.error('❌ Error obteniendo última fecha de sincronización:', error);
-    return '2023-01-01T00:00:00Z';
+    // Return a date 30 days ago as fallback
+    const fallbackDate = new Date();
+    fallbackDate.setDate(fallbackDate.getDate() - 30);
+    return fallbackDate.toISOString();
   }
 }
 
@@ -92,15 +95,19 @@ async function getOrders(accessToken: string, createdAfter: string) {
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     
+    // Format the date to ISO 8601 format without milliseconds
+    const formattedDate = new Date(createdAfter).toISOString().split('.')[0] + 'Z';
+    
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
+    // Ensure marketplaceId is a string and properly formatted
     const params = new URLSearchParams({
-      MarketplaceIds: marketplaceId!,
-      CreatedAfter: createdAfter,
+      MarketplaceIds: marketplaceId!.trim(),
+      CreatedAfter: formattedDate,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
     });
@@ -113,11 +120,13 @@ async function getOrders(accessToken: string, createdAfter: string) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ Error en respuesta de órdenes:', errorText);
-      throw new Error(`Failed to get orders: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    const filteredOrders = data.Orders?.filter(order => 
+    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
+
+    const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
@@ -125,7 +134,7 @@ async function getOrders(accessToken: string, createdAfter: string) {
     console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     return {
       Orders: filteredOrders,
-      payload: data
+      payload: data.payload
     };
   } catch (error) {
     console.error('❌ Error obteniendo órdenes:', error);
