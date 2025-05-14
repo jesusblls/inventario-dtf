@@ -65,6 +65,16 @@ export function SyncPage() {
 
       if (productsError) throw productsError;
 
+      // Get the total items processed from the latest successful sync
+      const { data: latestSync, error: syncError } = await supabase
+        .from('sync_history')
+        .select('*')
+        .eq('status', 'success')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (syncError) throw syncError;
+
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
         .select('*')
@@ -76,7 +86,7 @@ export function SyncPage() {
       setStats(prev => ({
         ...prev,
         totalProducts: products?.length || 0,
-        totalOrders: orders?.length || 0,
+        totalOrders: latestSync?.[0]?.items_processed || 0,
         lastSync: orders?.[0]?.last_sync_date || null,
         status: 'connected'
       }));
