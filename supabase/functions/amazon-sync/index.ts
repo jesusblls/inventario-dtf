@@ -72,6 +72,21 @@ async function getAccessToken() {
   }
 }
 
+async function getLastSyncDate() {
+  try {
+    console.log('📅 Obteniendo última fecha de sincronización...');
+    const { data, error } = await supabase.rpc('get_last_sync_date');
+    
+    if (error) throw error;
+    
+    console.log('✅ Última fecha de sincronización:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ Error obteniendo última fecha de sincronización:', error);
+    return '2023-01-01T00:00:00Z';
+  }
+}
+
 async function getOrders(accessToken: string, createdAfter: string) {
   try {
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
@@ -147,6 +162,27 @@ async function getOrderItems(accessToken: string, orderId: string) {
   }
 }
 
+async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
+  try {
+    console.log('💾 Guardando historial de sincronización...');
+    const { error } = await supabase
+      .from('sync_history')
+      .insert({
+        type: 'orders',
+        start_date: startDate,
+        end_date: endDate,
+        items_processed: itemsProcessed,
+        status,
+        error_message: errorMessage
+      });
+
+    if (error) throw error;
+    console.log('✅ Historial guardado correctamente');
+  } catch (error) {
+    console.error('❌ Error guardando historial:', error);
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method === 'OPTIONS') {
@@ -172,34 +208,22 @@ Deno.serve(async (req) => {
     console.log('🚀 Iniciando sincronización...');
     await validateEnvironment();
 
-    let body;
-    try {
-      body = await req.json();
-    } catch (error) {
-      console.error('❌ Error en el body de la petición:', error);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Invalid JSON in request body' 
-        }), 
-        { 
-          status: 400, 
-          headers: corsHeaders 
-        }
-      );
-    }
+    const lastSyncDate = await getLastSyncDate();
+    const startDate = lastSyncDate;
+    const endDate = new Date().toISOString();
 
-    const start_date = body.start_date || '2023-01-01T00:00:00Z';
-    console.log('📅 Fecha de inicio:', start_date);
+    console.log(`📅 Sincronizando desde ${startDate} hasta ${endDate}`);
 
     const accessToken = await getAccessToken();
-    const { Orders } = await getOrders(accessToken, start_date);
+    const { Orders } = await getOrders(accessToken, startDate);
 
     console.log(`🔄 Procesando ${Orders.length} órdenes...`);
 
     const results = [];
     const orderItems = [];
     const products = new Set();
+    let successCount = 0;
+    let errorCount = 0;
 
     for (const order of Orders) {
       console.log(`\n📦 Procesando orden: ${order.AmazonOrderId}`);
@@ -207,16 +231,13 @@ Deno.serve(async (req) => {
       console.log('Fecha de creación:', order.PurchaseDate);
       
       try {
-        // Get order items
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         
-        // Store order items for response
         orderItems.push({
           orderId: order.AmazonOrderId,
           items: items.OrderItems
         });
 
-        // Process each item in the order
         console.log(`\n📝 Procesando ${items.OrderItems.length} items de la orden...`);
         for (const item of items.OrderItems) {
           console.log(`\n🏷️ Producto: ${item.Title}`);
@@ -224,7 +245,6 @@ Deno.serve(async (req) => {
           console.log('Cantidad:', item.QuantityOrdered);
           console.log('SKU:', item.SellerSKU);
 
-          // Save product if we haven't seen it before
           if (!products.has(item.ASIN)) {
             console.log('💾 Guardando nuevo producto en la base de datos...');
             products.add(item.ASIN);
@@ -241,15 +261,14 @@ Deno.serve(async (req) => {
 
             if (productError) {
               console.error('❌ Error guardando producto:', productError);
+              errorCount++;
             } else {
               console.log('✅ Producto guardado correctamente');
+              successCount++;
             }
-          } else {
-            console.log('ℹ️ Producto ya existente en la base de datos');
           }
         }
 
-        // Save the order
         console.log('💾 Guardando orden en la base de datos...');
         const { error: orderError } = await supabase.rpc('sync_amazon_order', {
           p_order_id: order.AmazonOrderId,
@@ -258,12 +277,14 @@ Deno.serve(async (req) => {
 
         if (orderError) {
           console.error('❌ Error guardando orden:', orderError);
+          errorCount++;
           results.push({ 
             orderId: order.AmazonOrderId, 
             error: orderError.message 
           });
         } else {
           console.log('✅ Orden guardada correctamente');
+          successCount++;
           results.push({ 
             orderId: order.AmazonOrderId, 
             success: true 
@@ -271,6 +292,7 @@ Deno.serve(async (req) => {
         }
       } catch (error) {
         console.error('❌ Error procesando orden:', error);
+        errorCount++;
         results.push({ 
           orderId: order.AmazonOrderId, 
           error: `Failed to process order: ${error.message}` 
@@ -278,12 +300,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    const totalProcessed = successCount + errorCount;
+    const syncStatus = errorCount === 0 ? 'success' : 'partial';
+    
+    await saveSyncHistory(
+      startDate,
+      endDate,
+      totalProcessed,
+      syncStatus,
+      errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
+    );
+
     console.log('\n🎉 Sincronización completada');
     console.log(`📊 Resumen:
 - Órdenes procesadas: ${Orders.length}
 - Productos únicos: ${products.size}
-- Éxitos: ${results.filter(r => r.success).length}
-- Errores: ${results.filter(r => !r.success).length}
+- Éxitos: ${successCount}
+- Errores: ${errorCount}
 `);
 
     return new Response(
@@ -293,12 +326,28 @@ Deno.serve(async (req) => {
         orderItems,
         products: Array.from(products),
         results,
+        summary: {
+          startDate,
+          endDate,
+          totalProcessed,
+          successCount,
+          errorCount
+        },
         timestamp: new Date().toISOString()
       }), 
       { headers: corsHeaders }
     );
   } catch (error) {
     console.error('❌ Error general:', error);
+    
+    await saveSyncHistory(
+      new Date().toISOString(),
+      new Date().toISOString(),
+      0,
+      'error',
+      error.message
+    );
+
     return new Response(
       JSON.stringify({ 
         success: false, 
