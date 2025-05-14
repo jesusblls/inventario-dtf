@@ -86,7 +86,7 @@ export function SyncPage() {
       setStats(prev => ({
         ...prev,
         totalProducts: products?.length || 0,
-        totalOrders: latestSync?.[0]?.items_processed || 0,
+        totalOrders: orders?.length || 0,
         lastSync: orders?.[0]?.last_sync_date || null,
         status: 'connected'
       }));
