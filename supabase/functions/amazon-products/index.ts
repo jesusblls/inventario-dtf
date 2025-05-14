@@ -70,32 +70,50 @@ async function getAccessToken() {
 async function getCatalogItems(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
-
+    const region = Deno.env.get('AMAZON_REGION')?.toLowerCase() || 'na';
+    
+    // Get the current timestamp in ISO format
+    const timestamp = new Date().toISOString();
+    
     const headers = {
       'x-amz-access-token': accessToken,
+      'x-amz-date': timestamp,
+      'host': `sellingpartnerapi-${region}.amazon.com`,
+      'user-agent': 'Custom-Agent/1.0',
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
 
     const params = new URLSearchParams({
-      MarketplaceId: marketplaceId!,
-      IncludeIdentifiers: 'true',
-      PageSize: '20',
+      marketplaceIds: marketplaceId!,
+      includedData: 'summaries,attributes,dimensions,identifiers,relationships,salesRanks',
+      pageSize: '20',
     });
 
-    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?${params}`;
+    // Updated endpoint to use the Catalog Items API v2022-04-01
+    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/2022-04-01/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
 
-    const response = await fetch(apiUrl, { headers });
+    const response = await fetch(apiUrl, { 
+      method: 'GET',
+      headers 
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Amazon catalog response:', errorText);
-      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to get catalog items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
+    
+    if (!data.items) {
+      console.warn('No items found in response:', data);
+      return { items: [], payload: data };
+    }
+
     return {
-      items: data.items || [],
+      items: data.items,
       payload: data
     };
   } catch (error) {
