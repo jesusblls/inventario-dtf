@@ -28,26 +28,28 @@ export function UsersPage() {
       setLoading(true);
       setError(null);
 
-      // Fetch users from auth.users
-      const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-      if (authError) throw authError;
-
-      // Fetch profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('*');
+
       if (profilesError) throw profilesError;
 
-      // Combine auth users with their profiles
-      const combinedUsers = authUsers.users.map(authUser => {
-        const profile = profiles?.find(p => p.id === authUser.id);
+      // Get user details from auth.users through RLS policies
+      const { data: users, error: usersError } = await supabase.auth.admin.listUsers();
+      
+      if (usersError) {
+        throw usersError;
+      }
+
+      const combinedUsers = users.users.map(user => {
+        const profile = profiles?.find(p => p.id === user.id);
         return {
-          id: authUser.id,
+          id: user.id,
           name: profile?.name || null,
-          email: authUser.email,
+          email: user.email,
           role: profile?.role || 'user',
-          created_at: authUser.created_at,
-          last_sign_in_at: authUser.last_sign_in_at
+          created_at: user.created_at,
+          last_sign_in_at: user.last_sign_in_at
         };
       });
 
@@ -60,27 +62,27 @@ export function UsersPage() {
     }
   }
 
-  const handleDeleteUser = async (userId: string) => {
-    try {
-      const { error } = await supabase.auth.admin.deleteUser(userId);
-      if (error) throw error;
-      
-      setUsers(prevUsers => prevUsers.filter(user => user.id !== userId));
-    } catch (err) {
-      console.error('Error deleting user:', err);
-      setError('Error al eliminar el usuario. Por favor, intenta de nuevo.');
-    }
-  };
+  const filteredUsers = users.filter(user =>
+    (user.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const handleEditUser = (user: UserData) => {
     setSelectedUser(user);
     setShowAddModal(true);
   };
 
-  const filteredUsers = users.filter(user =>
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      if (error) throw error;
+      
+      await fetchUsers(); // Refresh the list after deletion
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      setError('Error al eliminar el usuario. Por favor, intenta de nuevo.');
+    }
+  };
 
   if (loading) {
     return (
