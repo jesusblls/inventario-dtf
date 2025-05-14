@@ -30,7 +30,7 @@ async function validateEnvironment() {
   }
 
   // Validate region format
-  const validRegions = ['na', 'eu', 'fe', 'mx'];
+  const validRegions = ['na', 'eu', 'fe'];
   const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
   if (!validRegions.includes(region!)) {
     throw new Error(`Invalid AMAZON_REGION. Must be one of: ${validRegions.join(', ')}`);
@@ -78,13 +78,7 @@ async function getCatalogItems(accessToken: string) {
   try {
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     const region = Deno.env.get('AMAZON_REGION')?.toLowerCase();
-    
-    // Validate region before making the request
-    const validRegions = ['na', 'eu', 'fe', 'mx'];
-    if (!validRegions.includes(region!)) {
-      throw new Error(`Invalid region: ${region}. Must be one of: ${validRegions.join(', ')}`);
-    }
-    
+
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -95,11 +89,8 @@ async function getCatalogItems(accessToken: string) {
       MarketplaceId: marketplaceId!,
     });
 
-    // Using Catalog API v0 endpoint
-    const apiUrl = `https://sellingpartnerapi-${region}.amazon.com/catalog/v0/items?${params}`;
+    const apiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/v0/items?${params}`;
     console.log('Fetching catalog items from:', apiUrl);
-    console.log('Using region:', region);
-    console.log('Using marketplace ID:', marketplaceId);
 
     const response = await fetch(apiUrl, { 
       method: 'GET',
@@ -113,19 +104,15 @@ async function getCatalogItems(accessToken: string) {
     }
 
     const data = await response.json();
-    
-    if (!data.payload) {
-      console.warn('No items found in response:', data);
-      return { items: [], payload: data };
-    }
+    console.log('Catalog API response:', data);
 
     // Transform the response to match our expected format
-    const items = data.payload.map((item: any) => ({
-      asin: item.asin,
+    const items = (data.payload || []).map((item: any) => ({
+      asin: item.asin || item.Identifiers?.MarketplaceASIN?.ASIN,
       summaries: [{
-        titleValue: item.title || 'Unknown Title'
+        titleValue: item.AttributeSets?.[0]?.Title || item.title || 'Unknown Title'
       }]
-    }));
+    })).filter((item: any) => item.asin);
 
     return {
       items,
