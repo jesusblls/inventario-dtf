@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Design, AmazonProduct, Product } from '../lib/types';
+import type { Design, AmazonProduct } from '../lib/types';
 
 interface DesignModalProps {
   design?: Design;
@@ -13,36 +13,16 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(design?.name || '');
   const [stock, setStock] = useState(design?.stock || 0);
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedAmazonProducts, setSelectedAmazonProducts] = useState<string[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [amazonProducts, setAmazonProducts] = useState<AmazonProduct[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchProducts();
     fetchAmazonProducts();
     if (design) {
-      fetchDesignProducts();
       fetchDesignAmazonProducts();
     }
   }, [design]);
-
-  const fetchProducts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name');
-      
-      if (error) throw error;
-      
-      setProducts(data || []);
-    } catch (err) {
-      console.error('Error fetching products:', err);
-      setError('Error al cargar productos');
-    }
-  };
 
   const fetchAmazonProducts = async () => {
     try {
@@ -57,24 +37,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     } catch (err) {
       console.error('Error fetching Amazon products:', err);
       setError('Error al cargar productos de Amazon');
-    }
-  };
-
-  const fetchDesignProducts = async () => {
-    if (!design?.id) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('product_designs')
-        .select('product_id')
-        .eq('design_id', design.id);
-
-      if (error) throw error;
-
-      setSelectedProducts(data.map(pd => pd.product_id));
-    } catch (err) {
-      console.error('Error fetching design products:', err);
-      setError('Error al cargar productos asociados');
     }
   };
 
@@ -115,27 +77,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
 
         if (updateError) throw updateError;
 
-        // Update product associations
-        const { error: deleteProductError } = await supabase
-          .from('product_designs')
-          .delete()
-          .eq('design_id', design.id);
-
-        if (deleteProductError) throw deleteProductError;
-
-        if (selectedProducts.length > 0) {
-          const { error: insertProductError } = await supabase
-            .from('product_designs')
-            .insert(
-              selectedProducts.map(productId => ({
-                product_id: productId,
-                design_id: design.id
-              }))
-            );
-
-          if (insertProductError) throw insertProductError;
-        }
-
         // Update Amazon product associations
         const { error: deleteAmazonError } = await supabase
           .from('design_amazon_products')
@@ -169,20 +110,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
 
         if (insertError) throw insertError;
 
-        // Create product associations
-        if (designData && selectedProducts.length > 0) {
-          const { error: productRelationError } = await supabase
-            .from('product_designs')
-            .insert(
-              selectedProducts.map(productId => ({
-                product_id: productId,
-                design_id: designData.id
-              }))
-            );
-
-          if (productRelationError) throw productRelationError;
-        }
-
         // Create Amazon product associations
         if (designData && selectedAmazonProducts.length > 0) {
           const { error: amazonRelationError } = await supabase
@@ -206,15 +133,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleProductSelect = (productId: string) => {
-    setSelectedProducts(prev => {
-      if (prev.includes(productId)) {
-        return prev.filter(id => id !== productId);
-      }
-      return [...prev, productId];
-    });
   };
 
   const handleAmazonProductSelect = (amazonProductId: string) => {
@@ -273,30 +191,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Productos Asociados
-            </label>
-            <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
-              {products.map((product) => (
-                <label
-                  key={product.id}
-                  className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedProducts.includes(product.id)}
-                    onChange={() => handleProductSelect(product.id)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <div className="ml-3">
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{product.name}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
           </div>
 
           <div>
