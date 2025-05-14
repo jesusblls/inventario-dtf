@@ -182,34 +182,42 @@ Deno.serve(async (req) => {
 
     const results = [];
     const orderItems = [];
+    const products = new Set();
 
     for (const order of Orders) {
       try {
-        // First get order items
+        // Get order items
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
+        
+        // Store order items for response
         orderItems.push({
           orderId: order.AmazonOrderId,
           items: items.OrderItems
         });
 
-        // Save products from order items
+        // Process each item in the order
         for (const item of items.OrderItems) {
-          const { error: productError } = await supabase
-            .from('amazon_products')
-            .upsert({
-              asin: item.ASIN,
-              title: item.Title,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: 'asin'
-            });
+          // Save product if we haven't seen it before
+          if (!products.has(item.ASIN)) {
+            products.add(item.ASIN);
+            
+            const { error: productError } = await supabase
+              .from('amazon_products')
+              .upsert({
+                asin: item.ASIN,
+                title: item.Title,
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'asin'
+              });
 
-          if (productError) {
-            console.error('Error saving product:', productError);
+            if (productError) {
+              console.error('Error saving product:', productError);
+            }
           }
         }
 
-        // Then save the order
+        // Save the order
         const { error: orderError } = await supabase.rpc('sync_amazon_order', {
           p_order_id: order.AmazonOrderId,
           p_status: order.OrderStatus
@@ -241,6 +249,7 @@ Deno.serve(async (req) => {
         success: true, 
         orders: Orders, 
         orderItems,
+        products: Array.from(products),
         results,
         timestamp: new Date().toISOString()
       }), 
