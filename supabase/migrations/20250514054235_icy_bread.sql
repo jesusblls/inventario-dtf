@@ -1,10 +1,9 @@
 /*
-  # Create admin user and profile
+  # Create initial admin user
 
-  1. Changes
-    - Creates a new admin user in auth.users
-    - Creates a corresponding profile in public.profiles
-    - Handles potential conflicts for existing users/profiles
+  1. Creates an admin user with email and password authentication
+  2. Creates a corresponding profile record
+  3. Handles conflicts appropriately
 */
 
 -- Create the initial user
@@ -12,9 +11,10 @@ DO $$
 DECLARE
   new_user_id uuid := gen_random_uuid();
 BEGIN
-  -- Insert the user
+  -- Insert the user with properly hashed password
   INSERT INTO auth.users (
     id,
+    instance_id,
     aud,
     role,
     email,
@@ -27,10 +27,11 @@ BEGIN
     is_super_admin
   ) VALUES (
     new_user_id,
+    '00000000-0000-0000-0000-000000000000',
     'authenticated',
     'authenticated',
     'jesus.castillohdz98@gmail.com',
-    crypt('Admin123!', gen_salt('bf')),
+    crypt('Admin123!', gen_salt('bf', 10)),
     now(),
     now(),
     now(),
