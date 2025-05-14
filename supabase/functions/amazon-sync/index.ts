@@ -344,6 +344,18 @@ async function updateInventory(asin: string, quantity: number) {
 }
 
 Deno.serve(async (req) => {
+  const encoder = new TextEncoder();
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
+
+  const sendProgress = async (progress: any) => {
+    await writer.write(
+      encoder.encode(
+        JSON.stringify({ type: 'progress', progress }) + '\n'
+      )
+    );
+  };
+
   try {
     if (req.method === 'OPTIONS') {
       return new Response(null, { 
@@ -377,17 +389,47 @@ Deno.serve(async (req) => {
     const accessToken = await getAccessToken();
     console.log('✅ Access token obtained');
 
+    await sendProgress({
+      stage: 'fetching',
+      totalOrders: 0,
+      processedOrders: 0,
+      newOrders: 0,
+      successCount: 0,
+      errorCount: 0
+    });
+
     console.log('📦 Fetching orders...');
     const { Orders } = await getOrders(accessToken);
     console.log(`✅ Retrieved ${Orders.length} orders`);
 
     // Filter out existing orders
     const newOrders = [];
+    let processedOrders = 0;
+    
+    await sendProgress({
+      stage: 'processing',
+      totalOrders: Orders.length,
+      processedOrders,
+      newOrders: 0,
+      successCount: 0,
+      errorCount: 0
+    });
+
     for (const order of Orders) {
       const exists = await checkOrderExists(order.AmazonOrderId);
       if (!exists) {
         newOrders.push(order);
       }
+      processedOrders++;
+      
+      await sendProgress({
+        stage: 'processing',
+        totalOrders: Orders.length,
+        processedOrders,
+        newOrders: newOrders.length,
+        successCount: 0,
+        errorCount: 0
+      });
     }
 
     console.log(`📝 Found ${newOrders.length} new orders to process`);
@@ -400,12 +442,23 @@ Deno.serve(async (req) => {
     const results = [];
     let successCount = 0;
     let errorCount = 0;
+    processedOrders = 0;
 
     // Now process items for each order
     for (const order of newOrders) {
       try {
         console.log(`📝 Processing items for order ${order.AmazonOrderId}...`);
         
+        await sendProgress({
+          stage: 'processing',
+          totalOrders: newOrders.length,
+          processedOrders,
+          newOrders: newOrders.length,
+          successCount,
+          errorCount,
+          currentOrderId: order.AmazonOrderId
+        });
+
         const items = await getOrderItems(accessToken, order.AmazonOrderId);
         await saveOrderItems(order.AmazonOrderId, items.OrderItems);
         console.log(`✅ Items for order ${order.AmazonOrderId} saved`);
@@ -445,6 +498,16 @@ Deno.serve(async (req) => {
           error: error.message 
         });
       }
+      
+      processedOrders++;
+      await sendProgress({
+        stage: 'processing',
+        totalOrders: newOrders.length,
+        processedOrders,
+        newOrders: newOrders.length,
+        successCount,
+        errorCount
+      });
     }
 
     const syncStatus = errorCount === 0 ? 'success' : 'partial';
@@ -460,21 +523,25 @@ Deno.serve(async (req) => {
     console.log('✅ Sync process completed');
     console.log(`📊 Summary: ${successCount} successful, ${errorCount} errors`);
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        results,
-        summary: {
-          startDate,
-          endDate,
-          totalOrders: newOrders.length,
-          successCount,
-          errorCount
-        },
-        timestamp: new Date().toISOString()
-      }), 
-      { headers: corsHeaders }
-    );
+    await sendProgress({
+      stage: 'complete',
+      totalOrders: newOrders.length,
+      processedOrders,
+      newOrders: newOrders.length,
+      successCount,
+      errorCount
+    });
+
+    await writer.close();
+
+    return new Response(stream.readable, { 
+      headers: { 
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      }
+    });
   } catch (error) {
     console.error('❌ Fatal error during sync:', error);
     
@@ -486,16 +553,25 @@ Deno.serve(async (req) => {
       error.message
     );
 
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message || 'An unexpected error occurred',
-        timestamp: new Date().toISOString()
-      }), 
-      { 
-        status: 500, 
-        headers: corsHeaders 
+    await sendProgress({
+      stage: 'complete',
+      totalOrders: 0,
+      processedOrders: 0,
+      newOrders: 0,
+      successCount: 0,
+      errorCount: 1,
+      error: error.message
+    });
+
+    await writer.close();
+
+    return new Response(stream.readable, { 
+      headers: { 
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
       }
-    );
+    });
   }
 });
