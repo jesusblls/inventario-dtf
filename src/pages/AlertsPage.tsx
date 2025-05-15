@@ -1,76 +1,161 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, Settings, CheckCircle, AlertTriangle, History, ChevronDown, RefreshCcw } from 'lucide-react';
-
-interface Alert {
-  id: number;
-  productName: string;
-  type: 'low_stock' | 'out_of_stock' | 'high_demand';
-  threshold: number;
-  currentValue: number;
-  category: string;
-  date: string;
-  status: 'pending' | 'handled';
-}
-
-const alerts: Alert[] = [
-  {
-    id: 1,
-    productName: 'Playera F1 Racing',
-    type: 'low_stock',
-    threshold: 10,
-    currentValue: 5,
-    category: 'Deportes',
-    date: '2024-03-15T10:30:00',
-    status: 'pending'
-  },
-  {
-    id: 2,
-    productName: 'Playera Calavera Mexicana',
-    type: 'high_demand',
-    threshold: 50,
-    currentValue: 45,
-    category: 'Cultura',
-    date: '2024-03-15T09:15:00',
-    status: 'pending'
-  },
-  {
-    id: 3,
-    productName: 'Playera Dragon Ball',
-    type: 'out_of_stock',
-    threshold: 0,
-    currentValue: 0,
-    category: 'Anime',
-    date: '2024-03-14T16:45:00',
-    status: 'handled'
-  },
-  {
-    id: 4,
-    productName: 'Playera Street Art',
-    type: 'low_stock',
-    threshold: 15,
-    currentValue: 3,
-    category: 'Urbano',
-    date: '2024-03-14T14:20:00',
-    status: 'pending'
-  },
-  {
-    id: 5,
-    productName: 'Playera Gaming Pro',
-    type: 'high_demand',
-    threshold: 40,
-    currentValue: 35,
-    category: 'Gaming',
-    date: '2024-03-14T11:45:00',
-    status: 'pending'
-  }
-];
-
-const categories = ['Deportes', 'Cultura', 'Anime', 'Urbano', 'Gaming'];
+import { supabase } from '../lib/supabase';
+import type { Alert, AlertSettings, Product } from '../lib/types';
 
 export function AlertsPage() {
   const [activeTab, setActiveTab] = useState<'current' | 'history' | 'settings'>('current');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [showThresholdModal, setShowThresholdModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertSettings, setAlertSettings] = useState<AlertSettings[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetchAlerts();
+    fetchCategories();
+  }, []);
+
+  const fetchAlerts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch alerts with product information
+      const { data: alertsData, error: alertsError } = await supabase
+        .from('alerts')
+        .select(`
+          *,
+          product:products (
+            id,
+            name,
+            stock,
+            size,
+            color,
+            type
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (alertsError) throw alertsError;
+
+      // Fetch alert settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('alert_settings')
+        .select('*');
+
+      if (settingsError) throw settingsError;
+
+      setAlerts(alertsData || []);
+      setAlertSettings(settingsData || []);
+    } catch (err) {
+      console.error('Error fetching alerts:', err);
+      setError('Error al cargar las alertas. Por favor, intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const { data: products, error } = await supabase
+        .from('products')
+        .select('type');
+
+      if (error) throw error;
+
+      const uniqueCategories = Array.from(new Set(products?.map(p => p.type)));
+      setCategories(['Todas', ...uniqueCategories]);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
+
+  const handleAlertAction = async (alertId: string) => {
+    try {
+      const { error: updateError } = await supabase
+        .from('alerts')
+        .update({
+          status: 'handled',
+          handled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', alertId);
+
+      if (updateError) throw updateError;
+
+      await fetchAlerts();
+    } catch (err) {
+      console.error('Error handling alert:', err);
+      setError('Error al atender la alerta. Por favor, intenta de nuevo.');
+    }
+  };
+
+  const handleRefresh = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: checkError } = await supabase
+        .rpc('check_and_create_alerts');
+
+      if (checkError) throw checkError;
+
+      await fetchAlerts();
+    } catch (err) {
+      console.error('Error refreshing alerts:', err);
+      setError('Error al actualizar las alertas. Por favor, intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setError(null);
+
+      const lowStockThreshold = parseInt(formData.get('lowStockThreshold') as string);
+      const highDemandThreshold = parseInt(formData.get('highDemandThreshold') as string);
+
+      // Update low stock threshold
+      const { error: lowStockError } = await supabase
+        .from('alert_settings')
+        .upsert({
+          type: 'low_stock',
+          threshold: lowStockThreshold,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'type'
+        });
+
+      if (lowStockError) throw lowStockError;
+
+      // Update high demand threshold
+      const { error: highDemandError } = await supabase
+        .from('alert_settings')
+        .upsert({
+          type: 'high_demand',
+          threshold: highDemandThreshold,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'type'
+        });
+
+      if (highDemandError) throw highDemandError;
+
+      await fetchAlerts();
+      setShowThresholdModal(false);
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      setError('Error al guardar la configuración. Por favor, intenta de nuevo.');
+    }
+  };
 
   const getAlertTypeDetails = (type: Alert['type']) => {
     switch (type) {
@@ -81,14 +166,6 @@ export function AlertsPage() {
           bgColor: 'bg-yellow-50 dark:bg-yellow-900/50',
           borderColor: 'border-yellow-500',
           text: 'Stock Bajo'
-        };
-      case 'out_of_stock':
-        return {
-          icon: AlertTriangle,
-          color: 'text-red-500',
-          bgColor: 'bg-red-50 dark:bg-red-900/50',
-          borderColor: 'border-red-500',
-          text: 'Sin Stock'
         };
       case 'high_demand':
         return {
@@ -102,28 +179,19 @@ export function AlertsPage() {
   };
 
   const filteredAlerts = alerts.filter(alert => 
-    !selectedCategory || alert.category === selectedCategory
+    !selectedCategory || alert.product?.type === selectedCategory
   );
 
   const pendingAlerts = filteredAlerts.filter(alert => alert.status === 'pending');
   const handledAlerts = filteredAlerts.filter(alert => alert.status === 'handled');
 
-  const handleAlertAction = (alertId: number) => {
-    // Here you would implement the logic to handle the alert
-    console.log('Handling alert:', alertId);
-  };
-
-  const handleRefresh = () => {
-    // Here you would implement the refresh logic
-    console.log('Refreshing alerts');
-  };
-
-  const handleSaveSettings = (event: React.FormEvent) => {
-    event.preventDefault();
-    // Here you would implement the settings save logic
-    console.log('Saving settings');
-    setShowThresholdModal(false);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -239,15 +307,15 @@ export function AlertsPage() {
                             <div className="flex items-center">
                               <typeDetails.icon className={`w-5 h-5 ${typeDetails.color}`} />
                               <div className="ml-3">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.productName}</h3>
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.product?.name}</h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                                  {typeDetails.text} - {alert.category}
+                                  {typeDetails.text} - {alert.product?.type}
                                 </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
                               <span className="text-sm text-gray-500 dark:text-gray-400">
-                                {new Date(alert.date).toLocaleString()}
+                                {new Date(alert.created_at).toLocaleString()}
                               </span>
                               <button
                                 onClick={() => handleAlertAction(alert.id)}
@@ -266,18 +334,16 @@ export function AlertsPage() {
                                     className={`${
                                       alert.type === 'low_stock' 
                                         ? 'bg-yellow-500' 
-                                        : alert.type === 'out_of_stock' 
-                                        ? 'bg-red-500' 
                                         : 'bg-blue-500'
                                     } h-2 rounded-full transition-all duration-300 ease-in-out`}
                                     style={{ 
-                                      width: `${Math.min((alert.currentValue / alert.threshold) * 100, 100)}%` 
+                                      width: `${Math.min((alert.current_value / alert.threshold) * 100, 100)}%` 
                                     }}
                                   ></div>
                                 </div>
                               </div>
                               <span className="ml-4 text-sm text-gray-500 dark:text-gray-400">
-                                {alert.currentValue} / {alert.threshold} {alert.type === 'high_demand' ? 'ventas' : 'unidades'}
+                                {alert.current_value} / {alert.threshold} {alert.type === 'high_demand' ? 'ventas' : 'unidades'}
                               </span>
                             </div>
                           </div>
@@ -308,15 +374,20 @@ export function AlertsPage() {
                             <div className="flex items-center">
                               <typeDetails.icon className="w-5 h-5 text-gray-400" />
                               <div className="ml-3">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.productName}</h3>
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.product?.name}</h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                                  {typeDetails.text} - {alert.category}
+                                  {typeDetails.text} - {alert.product?.type}
                                 </p>
                               </div>
                             </div>
-                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                              {new Date(alert.date).toLocaleString()}
-                            </span>
+                            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                Creada: {new Date(alert.created_at).toLocaleString()}
+                              </span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                Atendida: {new Date(alert.handled_at!).toLocaleString()}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       );
@@ -335,9 +406,10 @@ export function AlertsPage() {
                         <div className="mt-1 flex items-center gap-2">
                           <input
                             type="number"
+                            name="lowStockThreshold"
                             min="0"
+                            defaultValue={alertSettings.find(s => s.type === 'low_stock')?.threshold || 10}
                             className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
-                            placeholder="10"
                           />
                           <span className="text-gray-500 dark:text-gray-400">unidades</span>
                         </div>
@@ -350,9 +422,10 @@ export function AlertsPage() {
                         <div className="mt-1 flex items-center gap-2">
                           <input
                             type="number"
+                            name="highDemandThreshold"
                             min="0"
+                            defaultValue={alertSettings.find(s => s.type === 'high_demand')?.threshold || 50}
                             className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
-                            placeholder="50"
                           />
                           <span className="text-gray-500 dark:text-gray-400">ventas/mes</span>
                         </div>

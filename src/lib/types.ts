@@ -34,3 +34,24 @@ export interface ProductDesign {
   design_id: string;
   created_at: string;
 }
+
+export interface Alert {
+  id: string;
+  product_id: string;
+  type: 'low_stock' | 'high_demand';
+  threshold: number;
+  current_value: number;
+  status: 'pending' | 'handled';
+  created_at: string;
+  updated_at: string;
+  handled_at: string | null;
+  product?: Product;
+}
+
+export interface AlertSettings {
+  id: string;
+  type: 'low_stock' | 'high_demand';
+  threshold: number;
+  created_at: string;
+  updated_at: string;
+}
