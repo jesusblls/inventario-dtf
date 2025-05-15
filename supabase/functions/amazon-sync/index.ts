@@ -22,18 +22,25 @@ async function validateEnvironment() {
     'SUPABASE_SERVICE_ROLE_KEY'
   ];
 
-  const missingVars = requiredVars.filter(varName => !Deno.env.get(varName));
+  const missingVars = requiredVars.filter(varName => {
+    const value = Deno.env.get(varName);
+    return !value || value.trim() === '';
+  });
   
   if (missingVars.length > 0) {
-    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+    throw new Error(`Missing or empty required environment variables: ${missingVars.join(', ')}`);
   }
 }
 
 async function getAccessToken() {
   try {
-    const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN');
-    const clientId = Deno.env.get('AMAZON_CLIENT_ID');
-    const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET');
+    const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN')?.trim();
+    const clientId = Deno.env.get('AMAZON_CLIENT_ID')?.trim();
+    const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET')?.trim();
+
+    if (!refreshToken || !clientId || !clientSecret) {
+      throw new Error('Missing required Amazon authentication credentials');
+    }
 
     const tokenUrl = 'https://api.amazon.com/auth/o2/token';
     console.log('🔑 Requesting access token from:', tokenUrl);
@@ -45,9 +52,9 @@ async function getAccessToken() {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: refreshToken!,
-        client_id: clientId!,
-        client_secret: clientSecret!,
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
       }),
     });
 
@@ -79,9 +86,9 @@ async function getOrders(accessToken: string, nextToken?: string) {
       console.log('🔄 Usando NextToken:', nextToken);
     }
 
-    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
+    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID')?.trim();
     if (!marketplaceId) {
-      throw new Error('AMAZON_MARKETPLACE_ID is not defined');
+      throw new Error('AMAZON_MARKETPLACE_ID is not defined or empty');
     }
     
     const headers = {
@@ -91,7 +98,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
     };
 
     const params = new URLSearchParams({
-      MarketplaceIds: marketplaceId.trim(),
+      MarketplaceIds: marketplaceId,
       CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
@@ -106,17 +113,17 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(60000) // Increased timeout to 60 seconds
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Error en respuesta de órdenes:', errorText);
+      console.error('❌ Error en respuesta de órdenes:', response.status, errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
+    console.log('📦 Respuesta de órdenes recibida');
 
     if (!data.payload) {
       console.error('❌ Invalid response format:', data);
