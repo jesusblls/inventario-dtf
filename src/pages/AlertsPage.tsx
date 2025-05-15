@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Settings, CheckCircle, AlertTriangle, History, ChevronDown, RefreshCcw } from 'lucide-react';
+import { Bell, History, ChevronDown, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Alert, AlertSettings, Product } from '../lib/types';
 
 export function AlertsPage() {
-  const [activeTab, setActiveTab] = useState<'current' | 'history' | 'settings'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [showThresholdModal, setShowThresholdModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [alertSettings, setAlertSettings] = useState<AlertSettings[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
@@ -23,7 +21,6 @@ export function AlertsPage() {
       setLoading(true);
       setError(null);
 
-      // Fetch alerts with explicit join to products
       const { data: alertsData, error: alertsError } = await supabase
         .from('alerts')
         .select(`
@@ -55,15 +52,7 @@ export function AlertsPage() {
         product: alert.products
       })) || [];
 
-      // Fetch alert settings
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('alert_settings')
-        .select('*');
-
-      if (settingsError) throw settingsError;
-
       setAlerts(transformedAlerts);
-      setAlertSettings(settingsData || []);
     } catch (err) {
       console.error('Error fetching alerts:', err);
       setError('Error al cargar las alertas. Por favor, intenta de nuevo.');
@@ -104,70 +93,6 @@ export function AlertsPage() {
     } catch (err) {
       console.error('Error handling alert:', err);
       setError('Error al atender la alerta. Por favor, intenta de nuevo.');
-    }
-  };
-
-  const handleRefresh = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { error: checkError } = await supabase
-        .rpc('check_and_create_alerts', {});
-
-      if (checkError) throw checkError;
-
-      await fetchAlerts();
-    } catch (err) {
-      console.error('Error refreshing alerts:', err);
-      setError('Error al actualizar las alertas. Por favor, intenta de nuevo.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-
-    try {
-      setError(null);
-
-      const lowStockThreshold = parseInt(formData.get('lowStockThreshold') as string);
-      const highDemandThreshold = parseInt(formData.get('highDemandThreshold') as string);
-
-      // Update low stock threshold
-      const { error: lowStockError } = await supabase
-        .from('alert_settings')
-        .upsert({
-          type: 'low_stock',
-          threshold: lowStockThreshold,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'type'
-        });
-
-      if (lowStockError) throw lowStockError;
-
-      // Update high demand threshold
-      const { error: highDemandError } = await supabase
-        .from('alert_settings')
-        .upsert({
-          type: 'high_demand',
-          threshold: highDemandThreshold,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'type'
-        });
-
-      if (highDemandError) throw highDemandError;
-
-      await fetchAlerts();
-      setShowThresholdModal(false);
-    } catch (err) {
-      console.error('Error saving settings:', err);
-      setError('Error al guardar la configuración. Por favor, intenta de nuevo.');
     }
   };
 
@@ -215,22 +140,6 @@ export function AlertsPage() {
             <h1 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white">Alertas de Inventario</h1>
             <p className="text-sm md:text-base text-gray-600 dark:text-gray-400 mt-1">Gestiona las alertas de stock y demanda de tus productos</p>
           </div>
-          <div className="flex gap-4">
-            <button 
-              onClick={handleRefresh}
-              className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow transition-all duration-200"
-            >
-              <RefreshCcw className="w-5 h-5" />
-              <span className="hidden md:inline">Actualizar</span>
-            </button>
-            <button 
-              onClick={() => setShowThresholdModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-700 transition-colors duration-200 shadow-sm"
-            >
-              <Settings className="w-5 h-5 md:mr-2" />
-              <span className="hidden md:inline">Configurar Alertas</span>
-            </button>
-          </div>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md">
@@ -262,17 +171,6 @@ export function AlertsPage() {
               >
                 <History className="w-5 h-5" />
                 Historial
-              </button>
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`py-4 px-6 inline-flex items-center gap-2 border-b-2 font-medium whitespace-nowrap transition-colors duration-200 ${
-                  activeTab === 'settings'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                }`}
-              >
-                <Settings className="w-5 h-5" />
-                Configuración
               </button>
             </nav>
           </div>
@@ -335,7 +233,6 @@ export function AlertsPage() {
                                 onClick={() => handleAlertAction(alert.id)}
                                 className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                               >
-                                <CheckCircle className="w-4 h-4 mr-1" />
                                 Atender
                               </button>
                             </div>
@@ -407,82 +304,6 @@ export function AlertsPage() {
                       );
                     })
                   )}
-                </div>
-              )}
-
-              {activeTab === 'settings' && (
-                <div className="space-y-6">
-                  <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-6">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Umbrales de Alerta</h3>
-                    <form onSubmit={handleSaveSettings} className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Stock Bajo</label>
-                        <div className="mt-1 flex items-center gap-2">
-                          <input
-                            type="number"
-                            name="lowStockThreshold"
-                            min="0"
-                            defaultValue={alertSettings.find(s => s.type === 'low_stock')?.threshold || 10}
-                            className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
-                          />
-                          <span className="text-gray-500 dark:text-gray-400">unidades</span>
-                        </div>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          Se generará una alerta cuando el stock sea menor a este valor
-                        </p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Alta Demanda</label>
-                        <div className="mt-1 flex items-center gap-2">
-                          <input
-                            type="number"
-                            name="highDemandThreshold"
-                            min="0"
-                            defaultValue={alertSettings.find(s => s.type === 'high_demand')?.threshold || 50}
-                            className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
-                          />
-                          <span className="text-gray-500 dark:text-gray-400">ventas/mes</span>
-                        </div>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          Se generará una alerta cuando las ventas superen este valor
-                        </p>
-                      </div>
-                      <div className="pt-4">
-                        <button 
-                          type="submit"
-                          className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-                        >
-                          Guardar Configuración
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-
-                  <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-6">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Notificaciones</h3>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Notificaciones por Email</h4>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">Recibe alertas en tu correo electrónico</p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" className="sr-only peer" />
-                          <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Notificaciones Push</h4>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">Recibe alertas en tiempo real</p>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" className="sr-only peer" />
-                          <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
