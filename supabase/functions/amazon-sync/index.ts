@@ -63,7 +63,7 @@ async function getAccessToken() {
       throw new Error('Access token not found in response');
     }
 
-    console.log('✅ Access token obtained successfully');
+    console.log('✅ Access token obtained:', data.access_token);
     return data.access_token;
   } catch (error) {
     console.error('❌ Authentication error:', error);
