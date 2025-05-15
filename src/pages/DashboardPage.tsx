@@ -51,9 +51,12 @@ export function DashboardPage() {
       const lowStockCount = products?.filter(p => p.stock < 10).length || 0;
       const totalProducts = products?.length || 0;
 
-      // Get orders and total revenue
+      // Get orders and total revenue with date range parameters
       const { data: totalRevenue, error: revenueError } = await supabase
-        .rpc('get_total_revenue');
+        .rpc('get_total_revenue', {
+          start_date: '1970-01-01T00:00:00Z',
+          end_date: new Date().toISOString()
+        });
 
       if (revenueError) throw revenueError;
 
@@ -113,7 +116,7 @@ export function DashboardPage() {
       setStats({
         totalProducts,
         totalOrders,
-        totalRevenue,
+        totalRevenue: totalRevenue || 0,
         recentOrders,
         topProducts,
         lowStockCount

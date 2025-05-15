@@ -119,7 +119,7 @@ export function SyncPage() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        // Add timeout to prevent hanging requests
+        // Increase timeout to 2 minutes
         signal: AbortSignal.timeout(120000)
       });
 
@@ -141,9 +141,17 @@ export function SyncPage() {
 
       await fetchStats();
       await fetchSyncHistory();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error syncing:', err);
-      setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
+      let errorMessage = 'Error al sincronizar: ';
+      
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        errorMessage += 'No se pudo conectar con el servidor. Por favor, verifica tu conexión y que las credenciales de Amazon estén configuradas correctamente.';
+      } else {
+        errorMessage += err.message || 'Error desconocido';
+      }
+      
+      setError(errorMessage);
       setStats(prev => ({ ...prev, status: 'error' }));
     } finally {
       setSyncInProgress(false);
