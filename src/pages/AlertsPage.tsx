@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, History, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Bell, History, ChevronDown, AlertTriangle, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Alert, AlertSettings, Product } from '../lib/types';
+import type { Alert, AlertSettings } from '../lib/types';
 
 export function AlertsPage() {
-  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [activeTab, setActiveTab] = useState<'current' | 'history' | 'settings'>('current');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertSettings, setAlertSettings] = useState<AlertSettings[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
     fetchAlerts();
     fetchCategories();
+    fetchAlertSettings();
   }, []);
 
   const fetchAlerts = async () => {
@@ -46,7 +48,6 @@ export function AlertsPage() {
 
       if (alertsError) throw alertsError;
 
-      // Transform the data to match the expected format
       const transformedAlerts = alertsData?.map(alert => ({
         ...alert,
         product: alert.products
@@ -58,6 +59,19 @@ export function AlertsPage() {
       setError('Error al cargar las alertas. Por favor, intenta de nuevo.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAlertSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('alert_settings')
+        .select('*');
+
+      if (error) throw error;
+      setAlertSettings(data || []);
+    } catch (err) {
+      console.error('Error fetching alert settings:', err);
     }
   };
 
@@ -93,6 +107,51 @@ export function AlertsPage() {
     } catch (err) {
       console.error('Error handling alert:', err);
       setError('Error al atender la alerta. Por favor, intenta de nuevo.');
+    }
+  };
+
+  const handleSaveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setError(null);
+
+      const lowStockThreshold = parseInt(formData.get('lowStockThreshold') as string);
+      const highDemandThreshold = parseInt(formData.get('highDemandThreshold') as string);
+
+      // Update low stock threshold
+      const { error: lowStockError } = await supabase
+        .from('alert_settings')
+        .upsert({
+          type: 'low_stock',
+          threshold: lowStockThreshold,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'type'
+        });
+
+      if (lowStockError) throw lowStockError;
+
+      // Update high demand threshold
+      const { error: highDemandError } = await supabase
+        .from('alert_settings')
+        .upsert({
+          type: 'high_demand',
+          threshold: highDemandThreshold,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'type'
+        });
+
+      if (highDemandError) throw highDemandError;
+
+      await fetchAlertSettings();
+      await fetchAlerts();
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      setError('Error al guardar la configuración. Por favor, intenta de nuevo.');
     }
   };
 
@@ -172,31 +231,44 @@ export function AlertsPage() {
                 <History className="w-5 h-5" />
                 Historial
               </button>
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`py-4 px-6 inline-flex items-center gap-2 border-b-2 font-medium whitespace-nowrap transition-colors duration-200 ${
+                  activeTab === 'settings'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                <Settings className="w-5 h-5" />
+                Configuración
+              </button>
             </nav>
           </div>
 
           <div className="p-4 md:p-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-              <div className="relative w-full md:w-auto">
-                <select
-                  className="w-full md:w-auto appearance-none bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 px-4 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                >
-                  <option value="">Todas las categorías</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+            {(activeTab === 'current' || activeTab === 'history') && (
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div className="relative w-full md:w-auto">
+                  <select
+                    className="w-full md:w-auto appearance-none bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 px-4 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                  >
+                    <option value="">Todas las categorías</option>
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {activeTab === 'current' && `${pendingAlerts.length} alertas pendientes`}
+                  {activeTab === 'history' && `${handledAlerts.length} alertas atendidas`}
+                </div>
               </div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {activeTab === 'current' && `${pendingAlerts.length} alertas pendientes`}
-                {activeTab === 'history' && `${handledAlerts.length} alertas atendidas`}
-              </div>
-            </div>
+            )}
 
             <div className="overflow-y-auto max-h-[calc(100vh-20rem)]">
               {activeTab === 'current' && (
@@ -304,6 +376,56 @@ export function AlertsPage() {
                       );
                     })
                   )}
+                </div>
+              )}
+
+              {activeTab === 'settings' && (
+                <div className="space-y-6">
+                  <div className="bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg p-6">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Umbrales de Alerta</h3>
+                    <form onSubmit={handleSaveSettings} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Stock Bajo</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            name="lowStockThreshold"
+                            min="0"
+                            defaultValue={alertSettings.find(s => s.type === 'low_stock')?.threshold || 10}
+                            className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
+                          />
+                          <span className="text-gray-500 dark:text-gray-400">unidades</span>
+                        </div>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          Se generará una alerta cuando el stock sea menor a este valor
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Alta Demanda</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            name="highDemandThreshold"
+                            min="0"
+                            defaultValue={alertSettings.find(s => s.type === 'high_demand')?.threshold || 50}
+                            className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-md"
+                          />
+                          <span className="text-gray-500 dark:text-gray-400">ventas/mes</span>
+                        </div>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          Se generará una alerta cuando las ventas superen este valor
+                        </p>
+                      </div>
+                      <div className="pt-4">
+                        <button 
+                          type="submit"
+                          className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                        >
+                          Guardar Configuración
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               )}
             </div>
