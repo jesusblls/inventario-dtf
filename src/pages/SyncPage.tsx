@@ -3,8 +3,7 @@ import {
   RefreshCw, 
   Store, 
   Settings,
-  Loader,
-  XCircle
+  Loader
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -22,20 +21,8 @@ interface PlatformStats {
   status: 'connected' | 'error' | 'disconnected';
 }
 
-interface SyncProgress {
-  stage: 'fetching' | 'processing' | 'complete';
-  totalOrders: number;
-  processedOrders: number;
-  newOrders: number;
-  successCount: number;
-  errorCount: number;
-  currentOrderId?: string;
-  error?: string;
-}
-
 export function SyncPage() {
   const [syncInProgress, setSyncInProgress] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [stats, setStats] = useState<PlatformStats>({
     totalProducts: 0,
     totalOrders: 0,
@@ -120,7 +107,6 @@ export function SyncPage() {
     try {
       setSyncInProgress(true);
       setError(null);
-      setSyncProgress(null);
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -132,36 +118,25 @@ export function SyncPage() {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-        }
+        },
+        // Add timeout to prevent hanging requests
+        signal: AbortSignal.timeout(120000)
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error(`Error en la respuesta del servidor: ${response.status}`);
+      if (!response.ok) {
+        let errorMessage;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || `Error ${response.status}: ${response.statusText}`;
+        } catch {
+          errorMessage = `Error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(line => line.trim());
-
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            if (data.type === 'progress' || data.type === 'complete') {
-              setSyncProgress(data.progress);
-              if (data.type === 'complete' && data.progress.error) {
-                throw new Error(data.progress.error);
-              }
-            }
-          } catch (e) {
-            console.error('Error parsing progress:', e);
-          }
-        }
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Sync failed');
       }
 
       await fetchStats();
@@ -181,7 +156,7 @@ export function SyncPage() {
       case 'partial':
         return <RefreshCw className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />;
       case 'error':
-        return <XCircle className="w-5 h-5 text-red-500 dark:text-red-400" />;
+        return <RefreshCw className="w-5 h-5 text-red-500 dark:text-red-400" />;
       case 'in_progress':
         return <RefreshCw className="w-5 h-5 text-blue-500 dark:text-blue-400 animate-spin" />;
     }
@@ -233,59 +208,6 @@ export function SyncPage() {
         <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-300">
           <div className="flex items-center">
             <p>{error}</p>
-          </div>
-        </div>
-      )}
-
-      {syncProgress && (
-        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-            Progreso de Sincronización
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">
-                  {syncProgress.stage === 'fetching' && 'Obteniendo órdenes...'}
-                  {syncProgress.stage === 'processing' && 'Procesando órdenes...'}
-                  {syncProgress.stage === 'complete' && 'Sincronización completada'}
-                </span>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {syncProgress.processedOrders} / {syncProgress.totalOrders}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${(syncProgress.processedOrders / Math.max(syncProgress.totalOrders, 1)) * 100}%`
-                  }}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <div className="text-sm text-gray-500 dark:text-gray-400">Órdenes Nuevas</div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white">{syncProgress.newOrders}</div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <div className="text-sm text-gray-500 dark:text-gray-400">Procesadas</div>
-                <div className="text-lg font-semibold text-gray-900 dark:text-white">{syncProgress.processedOrders}</div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <div className="text-sm text-gray-500 dark:text-gray-400">Exitosas</div>
-                <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{syncProgress.successCount}</div>
-              </div>
-              <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                <div className="text-sm text-gray-500 dark:text-gray-400">Errores</div>
-                <div className="text-lg font-semibold text-red-600 dark:text-red-400">{syncProgress.errorCount}</div>
-              </div>
-            </div>
-            {syncProgress.currentOrderId && (
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                Procesando orden: {syncProgress.currentOrderId}
-              </div>
-            )}
           </div>
         </div>
       )}
