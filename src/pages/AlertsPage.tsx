@@ -16,7 +16,18 @@ export function AlertsPage() {
     fetchAlerts();
     fetchCategories();
     fetchAlertSettings();
+    checkAlerts();
   }, []);
+
+  const checkAlerts = async () => {
+    try {
+      const { error } = await supabase.rpc('check_and_create_alerts');
+      if (error) throw error;
+      await fetchAlerts();
+    } catch (err) {
+      console.error('Error checking alerts:', err);
+    }
+  };
 
   const fetchAlerts = async () => {
     try {
@@ -43,8 +54,7 @@ export function AlertsPage() {
             color,
             type
           )
-        `)
-        .order('created_at', { ascending: false });
+        `);
 
       if (alertsError) throw alertsError;
 
@@ -148,6 +158,7 @@ export function AlertsPage() {
       if (highDemandError) throw highDemandError;
 
       await fetchAlertSettings();
+      await checkAlerts();
       await fetchAlerts();
     } catch (err) {
       console.error('Error saving settings:', err);
@@ -193,7 +204,7 @@ export function AlertsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-4 md:p-8 flex-shrink-0">
+      <div className="p-4 md:p-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white">Alertas de Inventario</h1>
