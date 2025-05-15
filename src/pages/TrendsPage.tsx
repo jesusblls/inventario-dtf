@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -11,7 +11,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Calendar, TrendingUp, ArrowUpRight, ArrowDownRight, DollarSign, Package, Users, ChevronDown } from 'lucide-react';
+import { Calendar, TrendingUp, ArrowUpRight, ArrowDownRight, DollarSign, Package, Users } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 interface SalesData {
   date: string;
@@ -27,91 +28,98 @@ interface ProductTrend {
   revenue: number;
 }
 
-const salesData: SalesData[] = [
-  { date: '2024-03-01', sales: 45, revenue: 17955 },
-  { date: '2024-03-02', sales: 52, revenue: 20748 },
-  { date: '2024-03-03', sales: 48, revenue: 19152 },
-  { date: '2024-03-04', sales: 70, revenue: 27930 },
-  { date: '2024-03-05', sales: 61, revenue: 24339 },
-  { date: '2024-03-06', sales: 65, revenue: 25935 },
-  { date: '2024-03-07', sales: 75, revenue: 29925 },
-  { date: '2024-03-08', sales: 68, revenue: 27132 },
-  { date: '2024-03-09', sales: 58, revenue: 23142 },
-  { date: '2024-03-10', sales: 63, revenue: 25137 },
-];
+interface DashboardStats {
+  total_sales: number;
+  total_revenue: number;
+  average_order_value: number;
+}
 
-const trendingProducts: ProductTrend[] = [
-  {
-    name: 'Playera F1 Racing',
-    category: 'Deportes',
-    growth: 45,
-    sales: 156,
-    revenue: 62244,
-  },
-  {
-    name: 'Playera Calavera Mexicana',
-    category: 'Cultura',
-    growth: 32,
-    sales: 128,
-    revenue: 44672,
-  },
-  {
-    name: 'Playera Dragon Ball',
-    category: 'Anime',
-    growth: -8,
-    sales: 98,
-    revenue: 34202,
-  },
-  {
-    name: 'Playera Street Art',
-    category: 'Urbano',
-    growth: 25,
-    sales: 112,
-    revenue: 39088,
-  },
-  {
-    name: 'Playera Gaming Pro',
-    category: 'Gaming',
-    growth: 15,
-    sales: 89,
-    revenue: 31061,
-  },
+const timeRanges = [
+  { label: 'Última Semana', days: 7 },
+  { label: 'Último Mes', days: 30 },
+  { label: 'Último Trimestre', days: 90 },
+  { label: 'Último Año', days: 365 }
 ];
-
-const timeRanges = ['Última Semana', 'Último Mes', 'Último Trimestre', 'Último Año'];
-const categories = ['Todas', 'Deportes', 'Cultura', 'Anime', 'Urbano', 'Gaming'];
 
 export function TrendsPage() {
-  const [selectedTimeRange, setSelectedTimeRange] = useState('Último Mes');
+  const [selectedTimeRange, setSelectedTimeRange] = useState(timeRanges[1]);
   const [selectedCategory, setSelectedCategory] = useState('Todas');
+  const [salesData, setSalesData] = useState<SalesData[]>([]);
+  const [trendingProducts, setTrendingProducts] = useState<ProductTrend[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    total_sales: 0,
+    total_revenue: 0,
+    average_order_value: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<string[]>(['Todas']);
 
-  const totalRevenue = salesData.reduce((sum, day) => sum + day.revenue, 0);
-  const totalSales = salesData.reduce((sum, day) => sum + day.sales, 0);
-  const averageOrderValue = totalRevenue / totalSales;
+  useEffect(() => {
+    fetchData();
+  }, [selectedTimeRange]);
 
-  const stats = [
-    {
-      title: 'Ventas Totales',
-      value: totalSales,
-      change: '+12.5%',
-      isPositive: true,
-      icon: Package,
-    },
-    {
-      title: 'Ingresos',
-      value: `$${totalRevenue.toLocaleString()}`,
-      change: '+15.2%',
-      isPositive: true,
-      icon: DollarSign,
-    },
-    {
-      title: 'Valor Promedio',
-      value: `$${averageOrderValue.toFixed(2)}`,
-      change: '+2.4%',
-      isPositive: true,
-      icon: Users,
-    },
-  ];
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - selectedTimeRange.days);
+
+      // Fetch sales data
+      const { data: salesData, error: salesError } = await supabase
+        .rpc('get_sales_data', {
+          start_date: startDate.toISOString(),
+          end_date: new Date().toISOString()
+        });
+
+      if (salesError) throw salesError;
+
+      // Fetch top products
+      const { data: productsData, error: productsError } = await supabase
+        .rpc('get_top_products', {
+          start_date: startDate.toISOString(),
+          end_date: new Date().toISOString()
+        });
+
+      if (productsError) throw productsError;
+
+      // Fetch dashboard stats
+      const { data: statsData, error: statsError } = await supabase
+        .rpc('get_dashboard_stats', {
+          start_date: startDate.toISOString(),
+          end_date: new Date().toISOString()
+        });
+
+      if (statsError) throw statsError;
+
+      // Get unique categories from products
+      const uniqueCategories = ['Todas', ...new Set(productsData.map(p => p.category))];
+
+      setSalesData(salesData || []);
+      setTrendingProducts(productsData || []);
+      setStats(statsData[0] || {
+        total_sales: 0,
+        total_revenue: 0,
+        average_order_value: 0
+      });
+      setCategories(uniqueCategories);
+    } catch (error) {
+      console.error('Error fetching trends data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredProducts = trendingProducts.filter(product =>
+    selectedCategory === 'Todas' || product.category === selectedCategory
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -124,11 +132,11 @@ export function TrendsPage() {
           <div className="w-full md:w-auto">
             <select
               className="w-full md:w-auto appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 py-2 px-4 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              value={selectedTimeRange}
-              onChange={(e) => setSelectedTimeRange(e.target.value)}
+              value={selectedTimeRange.label}
+              onChange={(e) => setSelectedTimeRange(timeRanges.find(r => r.label === e.target.value) || timeRanges[1])}
             >
               {timeRanges.map((range) => (
-                <option key={range} value={range}>{range}</option>
+                <option key={range.label} value={range.label}>{range.label}</option>
               ))}
             </select>
           </div>
@@ -136,32 +144,47 @@ export function TrendsPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {stats.map((stat, index) => (
-            <div key={index} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{stat.title}</p>
-                  <h3 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white mt-1">{stat.value}</h3>
-                  <div className="flex items-center mt-2">
-                    {stat.isPositive ? (
-                      <ArrowUpRight className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <ArrowDownRight className="w-4 h-4 text-red-500" />
-                    )}
-                    <span className={`text-xs font-medium ${
-                      stat.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      {stat.change}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-1.5">vs mes anterior</span>
-                  </div>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg">
-                  <stat.icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Ventas Totales</p>
+                <h3 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white mt-1">
+                  {stats.total_sales}
+                </h3>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg">
+                <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
             </div>
-          ))}
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Ingresos</p>
+                <h3 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white mt-1">
+                  ${stats.total_revenue.toLocaleString()}
+                </h3>
+              </div>
+              <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg">
+                <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Valor Promedio</p>
+                <h3 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white mt-1">
+                  ${stats.average_order_value.toLocaleString()}
+                </h3>
+              </div>
+              <div className="bg-purple-50 dark:bg-purple-900/50 p-3 rounded-lg">
+                <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Charts */}
@@ -277,43 +300,38 @@ export function TrendsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {trendingProducts
-                  .filter(
-                    (product) =>
-                      selectedCategory === 'Todas' || product.category === selectedCategory
-                  )
-                  .map((product, index) => (
-                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-500 dark:text-gray-400">{product.category}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div
-                          className={`inline-flex items-center text-sm font-medium ${
-                            product.growth >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                          }`}
-                        >
-                          {product.growth >= 0 ? (
-                            <ArrowUpRight className="w-4 h-4 mr-1" />
-                          ) : (
-                            <ArrowDownRight className="w-4 h-4 mr-1" />
-                          )}
-                          {Math.abs(product.growth)}%
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">{product.sales}</div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="text-sm text-gray-900 dark:text-white">
-                          ${product.revenue.toLocaleString()}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                {filteredProducts.map((product, index) => (
+                  <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{product.category}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div
+                        className={`inline-flex items-center text-sm font-medium ${
+                          product.growth >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}
+                      >
+                        {product.growth >= 0 ? (
+                          <ArrowUpRight className="w-4 h-4 mr-1" />
+                        ) : (
+                          <ArrowDownRight className="w-4 h-4 mr-1" />
+                        )}
+                        {Math.abs(product.growth).toFixed(1)}%
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm text-gray-900 dark:text-white">{product.sales}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="text-sm text-gray-900 dark:text-white">
+                        ${product.revenue.toLocaleString()}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
