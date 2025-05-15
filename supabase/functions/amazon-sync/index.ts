@@ -13,6 +13,7 @@ const corsHeaders = {
 };
 
 async function validateEnvironment() {
+  console.log('🔍 Validating environment variables...');
   const requiredVars = [
     'AMAZON_REFRESH_TOKEN',
     'AMAZON_CLIENT_ID',
@@ -30,10 +31,12 @@ async function validateEnvironment() {
   if (missingVars.length > 0) {
     throw new Error(`Missing or empty required environment variables: ${missingVars.join(', ')}`);
   }
+  console.log('✅ All environment variables present');
 }
 
 async function getAccessToken() {
   try {
+    console.log('🔑 Starting access token request...');
     const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN')?.trim();
     const clientId = Deno.env.get('AMAZON_CLIENT_ID')?.trim();
     const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET')?.trim();
@@ -80,10 +83,12 @@ async function getAccessToken() {
 
 async function getOrders(accessToken: string, nextToken?: string) {
   try {
+    console.log('📦 Starting orders fetch...');
     const createdAfter = '2023-01-01T00:00:00Z';
-    console.log('📦 Obteniendo órdenes desde:', createdAfter);
+    console.log('📅 Fetching orders since:', createdAfter);
+    
     if (nextToken) {
-      console.log('🔄 Usando NextToken:', nextToken);
+      console.log('🔄 Using NextToken:', nextToken);
     }
 
     const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID')?.trim();
@@ -109,36 +114,36 @@ async function getOrders(accessToken: string, nextToken?: string) {
     }
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
-    console.log('🔍 URL de la API:', apiUrl);
+    console.log('🔍 Calling Amazon API:', apiUrl);
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(60000) // Increased timeout to 60 seconds
+      signal: AbortSignal.timeout(60000) // 60 second timeout
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Error en respuesta de órdenes:', response.status, errorText);
+      console.error('❌ Orders API error:', response.status, errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('📦 Respuesta de órdenes recibida');
+    console.log('📦 Orders response received');
 
     if (!data.payload) {
       console.error('❌ Invalid response format:', data);
       throw new Error('Invalid response format from Amazon API');
     }
 
-    const filteredOrders = data.payload?.Orders?.filter(order => 
+    const filteredOrders = data.payload?.Orders?.filter((order: any) => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
 
-    console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
+    console.log(`✅ Filtered ${filteredOrders.length} valid orders`);
     
     if (data.payload?.NextToken) {
-      console.log('📑 Obteniendo siguiente página de órdenes...');
+      console.log('📑 Fetching next page of orders...');
       const nextPageResult = await getOrders(accessToken, data.payload.NextToken);
       return {
         Orders: [...filteredOrders, ...nextPageResult.Orders],
@@ -154,13 +159,14 @@ async function getOrders(accessToken: string, nextToken?: string) {
       payload: data.payload
     };
   } catch (error) {
-    console.error('❌ Error obteniendo órdenes:', error);
+    console.error('❌ Error fetching orders:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
 
 async function getOrderItems(accessToken: string, orderId: string) {
   try {
+    console.log(`📦 Fetching items for order: ${orderId}`);
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -168,7 +174,6 @@ async function getOrderItems(accessToken: string, orderId: string) {
     };
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
-    console.log('🔍 Obteniendo items para orden:', orderId);
 
     const response = await fetch(apiUrl, { 
       headers,
@@ -177,7 +182,7 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ Error obteniendo items para orden ${orderId}:`, errorText);
+      console.error(`❌ Error fetching items for order ${orderId}:`, errorText);
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
@@ -186,16 +191,17 @@ async function getOrderItems(accessToken: string, orderId: string) {
       throw new Error('Invalid response format from Amazon API');
     }
 
-    console.log(`✅ Items obtenidos para orden ${orderId}`);
+    console.log(`✅ Retrieved items for order ${orderId}`);
     return data.payload;
   } catch (error) {
-    console.error(`❌ Error obteniendo items para orden ${orderId}:`, error);
+    console.error(`❌ Error fetching items for order ${orderId}:`, error);
     throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
 
 async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
   try {
+    console.log('📝 Saving sync history...');
     const { error } = await supabase
       .from('sync_history')
       .insert({
@@ -208,12 +214,14 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
       });
 
     if (error) throw error;
+    console.log('✅ Sync history saved');
   } catch (error) {
     console.error('❌ Error saving sync history:', error);
   }
 }
 
 async function checkProductExists(asin: string): Promise<boolean> {
+  console.log(`🔍 Checking if product exists: ${asin}`);
   const { data, error } = await supabase
     .from('amazon_products')
     .select('id')
@@ -228,6 +236,7 @@ async function checkProductExists(asin: string): Promise<boolean> {
 }
 
 async function checkOrderExists(orderId: string): Promise<boolean> {
+  console.log(`🔍 Checking if order exists: ${orderId}`);
   const { data, error } = await supabase
     .from('amazon_orders')
     .select('id')
@@ -243,6 +252,7 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
 
 async function saveOrdersBulk(orders: any[]) {
   try {
+    console.log(`📝 Saving ${orders.length} orders in bulk...`);
     const ordersToSave = orders.map(order => ({
       amazon_order_id: order.AmazonOrderId,
       status: order.OrderStatus,
@@ -256,7 +266,7 @@ async function saveOrdersBulk(orders: any[]) {
 
     if (error) throw error;
 
-    console.log(`✅ Saved ${ordersToSave.length} orders in bulk`);
+    console.log(`✅ Saved ${ordersToSave.length} orders successfully`);
   } catch (error) {
     console.error('❌ Error saving orders in bulk:', error);
     throw error;
@@ -265,6 +275,7 @@ async function saveOrdersBulk(orders: any[]) {
 
 async function saveOrderItems(orderId: string, items: any[]) {
   try {
+    console.log(`📝 Saving items for order ${orderId}...`);
     const orderItems = items.map(item => ({
       amazon_order_id: orderId,
       asin: item.ASIN,
@@ -277,18 +288,21 @@ async function saveOrderItems(orderId: string, items: any[]) {
 
     if (error) throw error;
 
+    console.log(`✅ Saved ${orderItems.length} items for order ${orderId}`);
+
     // Update inventory for related products and designs
     for (const item of orderItems) {
       await updateInventory(item.asin, item.quantity_ordered);
     }
   } catch (error) {
-    console.error('Error saving order items:', error);
+    console.error(`❌ Error saving items for order ${orderId}:`, error);
     throw error;
   }
 }
 
 async function updateInventory(asin: string, quantity: number) {
   try {
+    console.log(`📊 Updating inventory for ASIN ${asin}...`);
     // Get product relationships
     const { data: relationships, error: relError } = await supabase
       .from('product_amazon_products')
@@ -344,8 +358,10 @@ async function updateInventory(asin: string, quantity: number) {
         if (updateError) throw updateError;
       }
     }
+    
+    console.log(`✅ Inventory updated for ASIN ${asin}`);
   } catch (error) {
-    console.error('Error updating inventory:', error);
+    console.error(`❌ Error updating inventory for ASIN ${asin}:`, error);
     throw error;
   }
 }
@@ -356,11 +372,15 @@ Deno.serve(async (req) => {
   const writer = stream.writable.getWriter();
 
   const sendProgress = async (progress: any) => {
-    await writer.write(
-      encoder.encode(
-        JSON.stringify({ type: 'progress', progress }) + '\n'
-      )
-    );
+    try {
+      await writer.write(
+        encoder.encode(
+          JSON.stringify({ type: 'progress', progress }) + '\n'
+        )
+      );
+    } catch (error) {
+      console.error('❌ Error sending progress:', error);
+    }
   };
 
   try {
@@ -422,6 +442,7 @@ Deno.serve(async (req) => {
       errorCount: 0
     });
 
+    console.log('🔍 Checking for new orders...');
     for (const order of Orders) {
       const exists = await checkOrderExists(order.AmazonOrderId);
       if (!exists) {
@@ -560,25 +581,39 @@ Deno.serve(async (req) => {
       error.message
     );
 
-    await sendProgress({
-      stage: 'complete',
-      totalOrders: 0,
-      processedOrders: 0,
-      newOrders: 0,
-      successCount: 0,
-      errorCount: 1,
-      error: error.message
-    });
+    try {
+      await sendProgress({
+        stage: 'complete',
+        totalOrders: 0,
+        processedOrders: 0,
+        newOrders: 0,
+        successCount: 0,
+        errorCount: 1,
+        error: error.message
+      });
 
-    await writer.close();
+      await writer.close();
 
-    return new Response(stream.readable, { 
-      headers: { 
-        ...corsHeaders,
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
-      }
-    });
+      return new Response(stream.readable, { 
+        headers: { 
+          ...corsHeaders,
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        }
+      });
+    } catch (streamError) {
+      console.error('❌ Error sending error response:', streamError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: error.message 
+        }), 
+        { 
+          status: 500, 
+          headers: corsHeaders 
+        }
+      );
+    }
   }
 });
