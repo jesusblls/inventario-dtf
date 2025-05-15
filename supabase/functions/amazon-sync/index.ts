@@ -13,7 +13,6 @@ const corsHeaders = {
 };
 
 async function validateEnvironment() {
-  console.log('🔍 Validating environment variables...');
   const requiredVars = [
     'AMAZON_REFRESH_TOKEN',
     'AMAZON_CLIENT_ID',
@@ -23,27 +22,18 @@ async function validateEnvironment() {
     'SUPABASE_SERVICE_ROLE_KEY'
   ];
 
-  const missingVars = requiredVars.filter(varName => {
-    const value = Deno.env.get(varName);
-    return !value || value.trim() === '';
-  });
+  const missingVars = requiredVars.filter(varName => !Deno.env.get(varName));
   
   if (missingVars.length > 0) {
-    throw new Error(`Missing or empty required environment variables: ${missingVars.join(', ')}`);
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
-  console.log('✅ All environment variables present');
 }
 
 async function getAccessToken() {
   try {
-    console.log('🔑 Starting access token request...');
-    const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN')?.trim();
-    const clientId = Deno.env.get('AMAZON_CLIENT_ID')?.trim();
-    const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET')?.trim();
-
-    if (!refreshToken || !clientId || !clientSecret) {
-      throw new Error('Missing required Amazon authentication credentials');
-    }
+    const refreshToken = Deno.env.get('AMAZON_REFRESH_TOKEN');
+    const clientId = Deno.env.get('AMAZON_CLIENT_ID');
+    const clientSecret = Deno.env.get('AMAZON_CLIENT_SECRET');
 
     const tokenUrl = 'https://api.amazon.com/auth/o2/token';
     console.log('🔑 Requesting access token from:', tokenUrl);
@@ -55,9 +45,9 @@ async function getAccessToken() {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
+        refresh_token: refreshToken!,
+        client_id: clientId!,
+        client_secret: clientSecret!,
       }),
     });
 
@@ -83,17 +73,15 @@ async function getAccessToken() {
 
 async function getOrders(accessToken: string, nextToken?: string) {
   try {
-    console.log('📦 Starting orders fetch...');
     const createdAfter = '2023-01-01T00:00:00Z';
-    console.log('📅 Fetching orders since:', createdAfter);
-    
+    console.log('📦 Obteniendo órdenes desde:', createdAfter);
     if (nextToken) {
-      console.log('🔄 Using NextToken:', nextToken);
+      console.log('🔄 Usando NextToken:', nextToken);
     }
 
-    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID')?.trim();
+    const marketplaceId = Deno.env.get('AMAZON_MARKETPLACE_ID');
     if (!marketplaceId) {
-      throw new Error('AMAZON_MARKETPLACE_ID is not defined or empty');
+      throw new Error('AMAZON_MARKETPLACE_ID is not defined');
     }
     
     const headers = {
@@ -103,7 +91,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
     };
 
     const params = new URLSearchParams({
-      MarketplaceIds: marketplaceId,
+      MarketplaceIds: marketplaceId.trim(),
       CreatedAfter: createdAfter,
       MaxResultsPerPage: '100',
       OrderStatuses: 'Shipped,Unshipped'
@@ -114,36 +102,36 @@ async function getOrders(accessToken: string, nextToken?: string) {
     }
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders?${params}`;
-    console.log('🔍 Calling Amazon API:', apiUrl);
+    console.log('🔍 URL de la API:', apiUrl);
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(60000) // 60 second timeout
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Orders API error:', response.status, errorText);
+      console.error('❌ Error en respuesta de órdenes:', errorText);
       throw new Error(`Failed to get orders: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('📦 Orders response received');
+    console.log('📦 Respuesta de órdenes:', JSON.stringify(data, null, 2));
 
     if (!data.payload) {
       console.error('❌ Invalid response format:', data);
       throw new Error('Invalid response format from Amazon API');
     }
 
-    const filteredOrders = data.payload?.Orders?.filter((order: any) => 
+    const filteredOrders = data.payload?.Orders?.filter(order => 
       order.OrderStatus === 'Shipped' || 
       order.OrderStatus === 'Unshipped'
     ) || [];
 
-    console.log(`✅ Filtered ${filteredOrders.length} valid orders`);
+    console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     
     if (data.payload?.NextToken) {
-      console.log('📑 Fetching next page of orders...');
+      console.log('📑 Obteniendo siguiente página de órdenes...');
       const nextPageResult = await getOrders(accessToken, data.payload.NextToken);
       return {
         Orders: [...filteredOrders, ...nextPageResult.Orders],
@@ -159,14 +147,13 @@ async function getOrders(accessToken: string, nextToken?: string) {
       payload: data.payload
     };
   } catch (error) {
-    console.error('❌ Error fetching orders:', error);
+    console.error('❌ Error obteniendo órdenes:', error);
     throw new Error(`Orders fetch failed: ${error.message}`);
   }
 }
 
 async function getOrderItems(accessToken: string, orderId: string) {
   try {
-    console.log(`📦 Fetching items for order: ${orderId}`);
     const headers = {
       'x-amz-access-token': accessToken,
       'Accept': 'application/json',
@@ -174,6 +161,7 @@ async function getOrderItems(accessToken: string, orderId: string) {
     };
 
     const apiUrl = `https://sellingpartnerapi-na.amazon.com/orders/v0/orders/${orderId}/orderItems`;
+    console.log('🔍 Obteniendo items para orden:', orderId);
 
     const response = await fetch(apiUrl, { 
       headers,
@@ -182,7 +170,7 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ Error fetching items for order ${orderId}:`, errorText);
+      console.error(`❌ Error obteniendo items para orden ${orderId}:`, errorText);
       throw new Error(`Failed to get order items: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
@@ -191,17 +179,16 @@ async function getOrderItems(accessToken: string, orderId: string) {
       throw new Error('Invalid response format from Amazon API');
     }
 
-    console.log(`✅ Retrieved items for order ${orderId}`);
+    console.log(`✅ Items obtenidos para orden ${orderId}`);
     return data.payload;
   } catch (error) {
-    console.error(`❌ Error fetching items for order ${orderId}:`, error);
+    console.error(`❌ Error obteniendo items para orden ${orderId}:`, error);
     throw new Error(`Order items fetch failed: ${error.message}`);
   }
 }
 
 async function saveSyncHistory(startDate: string, endDate: string, itemsProcessed: number, status: string, errorMessage?: string) {
   try {
-    console.log('📝 Saving sync history...');
     const { error } = await supabase
       .from('sync_history')
       .insert({
@@ -214,14 +201,12 @@ async function saveSyncHistory(startDate: string, endDate: string, itemsProcesse
       });
 
     if (error) throw error;
-    console.log('✅ Sync history saved');
   } catch (error) {
     console.error('❌ Error saving sync history:', error);
   }
 }
 
 async function checkProductExists(asin: string): Promise<boolean> {
-  console.log(`🔍 Checking if product exists: ${asin}`);
   const { data, error } = await supabase
     .from('amazon_products')
     .select('id')
@@ -236,7 +221,6 @@ async function checkProductExists(asin: string): Promise<boolean> {
 }
 
 async function checkOrderExists(orderId: string): Promise<boolean> {
-  console.log(`🔍 Checking if order exists: ${orderId}`);
   const { data, error } = await supabase
     .from('amazon_orders')
     .select('id')
@@ -252,7 +236,6 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
 
 async function saveOrdersBulk(orders: any[]) {
   try {
-    console.log(`📝 Saving ${orders.length} orders in bulk...`);
     const ordersToSave = orders.map(order => ({
       amazon_order_id: order.AmazonOrderId,
       status: order.OrderStatus,
@@ -266,7 +249,7 @@ async function saveOrdersBulk(orders: any[]) {
 
     if (error) throw error;
 
-    console.log(`✅ Saved ${ordersToSave.length} orders successfully`);
+    console.log(`✅ Saved ${ordersToSave.length} orders in bulk`);
   } catch (error) {
     console.error('❌ Error saving orders in bulk:', error);
     throw error;
@@ -275,7 +258,6 @@ async function saveOrdersBulk(orders: any[]) {
 
 async function saveOrderItems(orderId: string, items: any[]) {
   try {
-    console.log(`📝 Saving items for order ${orderId}...`);
     const orderItems = items.map(item => ({
       amazon_order_id: orderId,
       asin: item.ASIN,
@@ -288,21 +270,18 @@ async function saveOrderItems(orderId: string, items: any[]) {
 
     if (error) throw error;
 
-    console.log(`✅ Saved ${orderItems.length} items for order ${orderId}`);
-
     // Update inventory for related products and designs
     for (const item of orderItems) {
       await updateInventory(item.asin, item.quantity_ordered);
     }
   } catch (error) {
-    console.error(`❌ Error saving items for order ${orderId}:`, error);
+    console.error('Error saving order items:', error);
     throw error;
   }
 }
 
 async function updateInventory(asin: string, quantity: number) {
   try {
-    console.log(`📊 Updating inventory for ASIN ${asin}...`);
     // Get product relationships
     const { data: relationships, error: relError } = await supabase
       .from('product_amazon_products')
@@ -358,10 +337,8 @@ async function updateInventory(asin: string, quantity: number) {
         if (updateError) throw updateError;
       }
     }
-    
-    console.log(`✅ Inventory updated for ASIN ${asin}`);
   } catch (error) {
-    console.error(`❌ Error updating inventory for ASIN ${asin}:`, error);
+    console.error('Error updating inventory:', error);
     throw error;
   }
 }
@@ -372,15 +349,11 @@ Deno.serve(async (req) => {
   const writer = stream.writable.getWriter();
 
   const sendProgress = async (progress: any) => {
-    try {
-      await writer.write(
-        encoder.encode(
-          JSON.stringify({ type: 'progress', progress }) + '\n'
-        )
-      );
-    } catch (error) {
-      console.error('❌ Error sending progress:', error);
-    }
+    await writer.write(
+      encoder.encode(
+        JSON.stringify({ type: 'progress', progress }) + '\n'
+      )
+    );
   };
 
   try {
@@ -442,7 +415,6 @@ Deno.serve(async (req) => {
       errorCount: 0
     });
 
-    console.log('🔍 Checking for new orders...');
     for (const order of Orders) {
       const exists = await checkOrderExists(order.AmazonOrderId);
       if (!exists) {
@@ -581,39 +553,25 @@ Deno.serve(async (req) => {
       error.message
     );
 
-    try {
-      await sendProgress({
-        stage: 'complete',
-        totalOrders: 0,
-        processedOrders: 0,
-        newOrders: 0,
-        successCount: 0,
-        errorCount: 1,
-        error: error.message
-      });
+    await sendProgress({
+      stage: 'complete',
+      totalOrders: 0,
+      processedOrders: 0,
+      newOrders: 0,
+      successCount: 0,
+      errorCount: 1,
+      error: error.message
+    });
 
-      await writer.close();
+    await writer.close();
 
-      return new Response(stream.readable, { 
-        headers: { 
-          ...corsHeaders,
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        }
-      });
-    } catch (streamError) {
-      console.error('❌ Error sending error response:', streamError);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: error.message 
-        }), 
-        { 
-          status: 500, 
-          headers: corsHeaders 
-        }
-      );
-    }
+    return new Response(stream.readable, { 
+      headers: { 
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      }
+    });
   }
 });
