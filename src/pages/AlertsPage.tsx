@@ -23,12 +23,20 @@ export function AlertsPage() {
       setLoading(true);
       setError(null);
 
-      // Fetch alerts with product information
+      // Fetch alerts with explicit join to products
       const { data: alertsData, error: alertsError } = await supabase
         .from('alerts')
         .select(`
-          *,
-          product:products (
+          id,
+          product_id,
+          type,
+          threshold,
+          current_value,
+          status,
+          created_at,
+          updated_at,
+          handled_at,
+          products (
             id,
             name,
             stock,
@@ -41,6 +49,12 @@ export function AlertsPage() {
 
       if (alertsError) throw alertsError;
 
+      // Transform the data to match the expected format
+      const transformedAlerts = alertsData?.map(alert => ({
+        ...alert,
+        product: alert.products
+      })) || [];
+
       // Fetch alert settings
       const { data: settingsData, error: settingsError } = await supabase
         .from('alert_settings')
@@ -48,7 +62,7 @@ export function AlertsPage() {
 
       if (settingsError) throw settingsError;
 
-      setAlerts(alertsData || []);
+      setAlerts(transformedAlerts);
       setAlertSettings(settingsData || []);
     } catch (err) {
       console.error('Error fetching alerts:', err);
@@ -99,7 +113,7 @@ export function AlertsPage() {
       setError(null);
 
       const { error: checkError } = await supabase
-        .rpc('check_and_create_alerts');
+        .rpc('check_and_create_alerts', {});
 
       if (checkError) throw checkError;
 
