@@ -127,16 +127,22 @@ export function SyncPage() {
         throw new Error('No authenticated session found');
       }
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`;
+      console.log('Calling sync endpoint:', apiUrl);
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-        }
+        },
+        // Add timeout of 5 minutes
+        signal: AbortSignal.timeout(300000)
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Error en la respuesta del servidor: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Error en la respuesta del servidor: ${response.status} - ${errorText}`);
       }
 
       const reader = response.body.getReader();
@@ -166,9 +172,19 @@ export function SyncPage() {
 
       await fetchStats();
       await fetchSyncHistory();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error syncing:', err);
-      setError('Error al sincronizar: ' + (err.message || 'Error desconocido'));
+      let errorMessage = 'Error al sincronizar';
+      
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        errorMessage = 'Error de conexión: No se pudo conectar con el servidor. Por favor, verifica tu conexión a internet y vuelve a intentarlo.';
+      } else if (err.message.includes('timeout')) {
+        errorMessage = 'La operación ha excedido el tiempo límite. Por favor, inténtalo de nuevo.';
+      } else {
+        errorMessage = `Error al sincronizar: ${err.message || 'Error desconocido'}`;
+      }
+      
+      setError(errorMessage);
       setStats(prev => ({ ...prev, status: 'error' }));
     } finally {
       setSyncInProgress(false);
