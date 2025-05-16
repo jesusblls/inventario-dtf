@@ -441,4 +441,4 @@ export function AlertsPage() {
   );
 }
 
-export { AlertsPage }
+export default AlertsPage;
