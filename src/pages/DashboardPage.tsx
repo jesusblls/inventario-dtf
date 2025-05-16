@@ -40,14 +40,12 @@ export function DashboardPage() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-
       // Get total products and low stock count
       const { data: products, error: productsError } = await supabase
         .from('products')
         .select('id, stock');
 
       if (productsError) throw productsError;
-
       // Get active alerts count
       const { data: activeAlerts, error: alertsError } = await supabase
         .from('alerts')
@@ -59,17 +57,15 @@ export function DashboardPage() {
       const lowStockCount = activeAlerts?.length || 0;
       const totalProducts = products?.length || 0;
 
-      // Get orders and total revenue
+      // Get all-time orders and revenue
       const { data: dashboardStats, error: statsError } = await supabase
-        .rpc('get_dashboard_stats');
+        .from('amazon_orders')
+        .select('amount');
 
       if (statsError) throw statsError;
 
-      const stats = dashboardStats[0] || {
-        total_sales: 0,
-        total_revenue: 0,
-        average_order_value: 0
-      };
+      const totalRevenue = dashboardStats?.reduce((sum, order) => sum + (order.amount || 0), 0) || 0;
+      const totalOrders = dashboardStats?.length || 0;
 
       // Get recent orders with amounts
       const { data: orders, error: ordersError } = await supabase
@@ -80,17 +76,23 @@ export function DashboardPage() {
 
       if (ordersError) throw ordersError;
 
-      // Get top products with date range parameters
-      const startDate = new Date('1970-01-01').toISOString();
-      const endDate = new Date().toISOString();
-
+      // Get all-time top products
       const { data: topProducts, error: topProductsError } = await supabase
-        .rpc('get_top_products', {
-          start_date: startDate,
-          end_date: endDate
-        });
+        .from('amazon_order_items')
+        .select('asin, quantity_ordered');
 
       if (topProductsError) throw topProductsError;
+
+      // Process top products data
+      const productSales = new Map();
+      topProducts?.forEach(item => {
+        const currentCount = productSales.get(item.asin) || 0;
+        productSales.set(item.asin, currentCount + item.quantity_ordered);
+      });
+
+      const topProductsList = Array.from(productSales.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
 
       const recentOrders = (orders || []).map(order => ({
         id: order.id,
@@ -102,10 +104,10 @@ export function DashboardPage() {
 
       setStats({
         totalProducts,
-        totalOrders: stats.total_sales,
-        totalRevenue: stats.total_revenue,
+        totalOrders,
+        totalRevenue,
         recentOrders,
-        topProducts: topProducts || [],
+        topProducts: topProductsList || [],
         lowStockCount
       });
     } catch (error) {
@@ -143,7 +145,7 @@ export function DashboardPage() {
             <div className="ml-4">
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Productos</p>
               <h3 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.totalProducts}
+                {stats.totalProducts.toLocaleString()}
               </h3>
             </div>
           </div>
@@ -154,7 +156,7 @@ export function DashboardPage() {
             <div className="ml-4">
               <p className="text-sm text-gray-500 dark:text-gray-400">Ingresos Totales</p>
               <h3 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-                ${stats.totalRevenue.toLocaleString()}
+                ${stats.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
               </h3>
             </div>
           </div>
@@ -165,7 +167,7 @@ export function DashboardPage() {
             <div className="ml-4">
               <p className="text-sm text-gray-500 dark:text-gray-400">Alertas Activas</p>
               <h3 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.lowStockCount}
+                {stats.lowStockCount.toLocaleString()}
               </h3>
             </div>
           </div>
