@@ -19,6 +19,9 @@ interface UserFormData {
   role: 'admin' | 'user';
 }
 
+// Email validation regex pattern
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
 export function UsersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,8 +102,17 @@ export function UsersPage() {
 
     const form = e.currentTarget;
     const formData = new FormData(form);
+    const email = formData.get('email') as string;
+
+    // Validate email format before submitting
+    if (!EMAIL_REGEX.test(email)) {
+      setFormError('El formato del correo electrónico no es válido. Por favor, verifica e intenta de nuevo.');
+      setFormLoading(false);
+      return;
+    }
+
     const userData: UserFormData = {
-      email: formData.get('email') as string,
+      email,
       password: formData.get('password') as string,
       name: formData.get('name') as string,
       role: formData.get('role') as 'admin' | 'user',
@@ -372,6 +384,8 @@ export function UsersPage() {
                 <input
                   type="email"
                   name="email"
+                  pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+                  title="Por favor ingresa un correo electrónico válido"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   defaultValue={selectedUser?.email || ''}
                   required
