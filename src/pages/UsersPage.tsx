@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Plus, Edit, Trash2, Search, AlertCircle, Loader } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface UserData {
   id: string;
@@ -11,13 +12,22 @@ interface UserData {
   last_sign_in_at: string | null;
 }
 
+interface UserFormData {
+  email: string;
+  password: string;
+  name: string;
+  role: 'admin' | 'user';
+}
+
 export function UsersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [formLoading, setFormLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -51,6 +61,89 @@ export function UsersPage() {
     } catch (err) {
       console.error('Error deleting user:', err);
       setError('Error al eliminar el usuario. Por favor, intenta de nuevo.');
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFormLoading(true);
+    setFormError(null);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const userData: UserFormData = {
+      email: formData.get('email') as string,
+      password: formData.get('password') as string,
+      name: formData.get('name') as string,
+      role: formData.get('role') as 'admin' | 'user',
+    };
+
+    try {
+      // Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: userData.email,
+        password: userData.password,
+        email_confirm: true,
+      });
+
+      if (authError) throw authError;
+
+      // Update profile with name and role
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          name: userData.name,
+          role: userData.role,
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) throw profileError;
+
+      await fetchUsers();
+      setShowAddModal(false);
+      setSelectedUser(null);
+    } catch (err) {
+      console.error('Error creating user:', err);
+      setFormError('Error al crear el usuario. Por favor, verifica los datos e intenta de nuevo.');
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    setFormLoading(true);
+    setFormError(null);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const userData = {
+      name: formData.get('name') as string,
+      role: formData.get('role') as 'admin' | 'user',
+    };
+
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          name: userData.name,
+          role: userData.role,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedUser.id);
+
+      if (updateError) throw updateError;
+
+      await fetchUsers();
+      setShowAddModal(false);
+      setSelectedUser(null);
+    } catch (err) {
+      console.error('Error updating user:', err);
+      setFormError('Error al actualizar el usuario. Por favor, intenta de nuevo.');
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -194,15 +287,25 @@ export function UsersPage() {
                 {selectedUser ? 'Editar Usuario' : 'Nuevo Usuario'}
               </h2>
             </div>
-            <form className="p-6 space-y-4">
+            {formError && (
+              <div className="mx-6 mt-6 p-4 bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-300">
+                {formError}
+              </div>
+            )}
+            <form 
+              className="p-6 space-y-4" 
+              onSubmit={selectedUser ? handleUpdateUser : handleCreateUser}
+            >
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Nombre Completo
                 </label>
                 <input
                   type="text"
+                  name="name"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   defaultValue={selectedUser?.name || ''}
+                  required
                 />
               </div>
               <div>
@@ -211,8 +314,11 @@ export function UsersPage() {
                 </label>
                 <input
                   type="email"
+                  name="email"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   defaultValue={selectedUser?.email || ''}
+                  required
+                  disabled={!!selectedUser}
                 />
               </div>
               {!selectedUser && (
@@ -222,7 +328,10 @@ export function UsersPage() {
                   </label>
                   <input
                     type="password"
+                    name="password"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                    minLength={8}
                   />
                 </div>
               )}
@@ -231,8 +340,10 @@ export function UsersPage() {
                   Rol
                 </label>
                 <select
+                  name="role"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   defaultValue={selectedUser?.role || 'user'}
+                  required
                 >
                   <option value="user">Usuario</option>
                   <option value="admin">Administrador</option>
@@ -244,6 +355,7 @@ export function UsersPage() {
                   onClick={() => {
                     setShowAddModal(false);
                     setSelectedUser(null);
+                    setFormError(null);
                   }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
@@ -251,8 +363,12 @@ export function UsersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={formLoading}
+                  className={`px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center justify-center gap-2 ${
+                    formLoading ? 'opacity-75 cursor-not-allowed' : 'hover:bg-blue-700'
+                  }`}
                 >
+                  {formLoading && <Loader className="w-4 h-4 animate-spin" />}
                   {selectedUser ? 'Guardar Cambios' : 'Crear Usuario'}
                 </button>
               </div>
