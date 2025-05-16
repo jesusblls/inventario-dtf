@@ -3,6 +3,10 @@ import { X, Loader, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Design, AmazonProduct } from '../lib/types';
 
+interface User {
+  id: string;
+}
+
 interface DesignModalProps {
   design?: Design;
   onClose: () => void;
@@ -11,6 +15,7 @@ interface DesignModalProps {
 
 export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [name, setName] = useState(design?.name || '');
   const [stock, setStock] = useState(design?.stock || 0);
   const [selectedAmazonProducts, setSelectedAmazonProducts] = useState<string[]>([]);
@@ -19,11 +24,23 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    fetchUser();
     fetchAmazonProducts();
     if (design) {
       fetchDesignAmazonProducts();
     }
   }, [design]);
+
+  const fetchUser = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No authenticated user');
+      setUser(user);
+    } catch (err) {
+      console.error('Error fetching user:', err);
+      setError('Error al obtener información del usuario');
+    }
+  };
 
   const fetchAmazonProducts = async () => {
     try {
@@ -78,6 +95,8 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
       if (userError) throw userError;
       if (!user) throw new Error('No user found');
 
+      if (!user) throw new Error('No authenticated user');
+
       if (design?.id) {
         // Update existing design
         const { error: updateError } = await supabase
@@ -86,6 +105,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             id: design.id,
             name,
             stock: stockValue,
+            owner_id: user.id,
             updated_at: new Date().toISOString(),
             owner_id: user.id // Ensure owner_id is set on update
           })
@@ -120,6 +140,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             name,
             stock: stockValue,
             owner_id: user.id // Set owner_id for new designs
+            owner_id: user.id
           })
           .select()
           .single();
