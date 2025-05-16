@@ -119,8 +119,8 @@ export function SyncPage() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        // Increase timeout to 2 minutes
-        signal: AbortSignal.timeout(120000)
+        // Increase timeout to 5 minutes
+        signal: AbortSignal.timeout(300000)
       });
 
       if (!response.ok) {

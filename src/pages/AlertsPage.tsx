@@ -138,8 +138,6 @@ export function AlertsPage() {
           type: 'low_stock',
           threshold: lowStockThreshold,
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'type'
         });
 
       if (lowStockError) throw lowStockError;
@@ -151,8 +149,6 @@ export function AlertsPage() {
           type: 'high_demand',
           threshold: highDemandThreshold,
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'type'
         });
 
       if (highDemandError) throw highDemandError;
