@@ -106,8 +106,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             name,
             stock: stockValue,
             owner_id: user.id,
-            updated_at: new Date().toISOString(),
-            owner_id: user.id // Ensure owner_id is set on update
+            updated_at: new Date().toISOString()
           })
 
         if (updateError) throw updateError;
@@ -140,7 +139,6 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             name,
             stock: stockValue,
             owner_id: user.id // Set owner_id for new designs
-            owner_id: user.id
           })
           .select()
           .single();
