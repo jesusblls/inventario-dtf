@@ -63,18 +63,25 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     e.preventDefault();
     setLoading(true);
     setError('');
+    const stockValue = parseInt(stock.toString());
+
+    if (isNaN(stockValue)) {
+      setError('El stock debe ser un número válido');
+      setLoading(false);
+      return;
+    }
 
     try {
       if (design?.id) {
         // Update existing design
         const { error: updateError } = await supabase
           .from('designs')
-          .update({
+          .upsert({
+            id: design.id,
             name,
-            stock,
+            stock: stockValue,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', design.id);
 
         if (updateError) throw updateError;
 
@@ -104,7 +111,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
           .from('designs')
           .insert({
             name,
-            stock,
+            stock: stockValue,
           })
           .select()
           .single();
@@ -189,11 +196,14 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Stock
             </label>
-            <input
+            <input 
               type="number"
               min="0"
               value={stock}
-              onChange={(e) => setStock(parseInt(e.target.value))}
+              onChange={(e) => {
+                const value = e.target.value;
+                setStock(value === '' ? 0 : parseInt(value));
+              }}
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
