@@ -12,10 +12,32 @@ import { SettingsPage } from './pages/SettingsPage';
 import { Sidebar } from './components/Sidebar';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase';
 
 function Layout({ children }: { children: React.ReactNode }) {
   const { signOut } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getUserRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setUserRole(profile.role);
+      }
+    };
+
+    getUserRole();
+  }, []);
 
   return (
     <div className="flex h-screen">
@@ -23,6 +45,7 @@ function Layout({ children }: { children: React.ReactNode }) {
         isOpen={isSidebarOpen} 
         onClose={() => setIsSidebarOpen(false)} 
         onLogout={signOut}
+        userRole={userRole}
       />
       <main className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900">
         {children}
@@ -33,8 +56,33 @@ function Layout({ children }: { children: React.ReactNode }) {
 
 function ProtectedRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, loading } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    const getUserRole = async () => {
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setUserRole(profile.role);
+      }
+      setRoleLoading(false);
+    };
+
+    if (user) {
+      getUserRole();
+    } else {
+      setRoleLoading(false);
+    }
+  }, [user]);
+
+  if (loading || roleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -44,6 +92,10 @@ function ProtectedRoute({ children, adminOnly = false }: { children: React.React
 
   if (!user) {
     return <Navigate to="/login" />;
+  }
+
+  if (adminOnly && userRole !== 'admin') {
+    return <Navigate to="/" />;
   }
 
   return <Layout>{children}</Layout>;

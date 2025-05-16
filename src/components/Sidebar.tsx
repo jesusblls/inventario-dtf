@@ -20,6 +20,7 @@ interface SidebarProps {
   isOpen: boolean;
   onLogout: () => void;
   onClose: () => void;
+  userRole: string | null;
 }
 
 const menuItems = [
@@ -33,9 +34,8 @@ const menuItems = [
   { icon: Settings, text: 'Configuración', path: '/settings' },
 ];
 
-export function Sidebar({ isOpen, onLogout, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onLogout, onClose, userRole }: SidebarProps) {
   const { theme, toggleTheme } = useTheme();
-  const userRole = 'admin';
 
   return (
     <>
