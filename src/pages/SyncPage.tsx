@@ -113,7 +113,15 @@ export function SyncPage() {
         throw new Error('No authenticated session found');
       }
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/amazon-sync`, {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL environment variable is not defined');
+      }
+
+      const apiUrl = `${supabaseUrl}/functions/v1/amazon-sync`;
+      console.log('Calling sync function at:', apiUrl);
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -147,6 +155,8 @@ export function SyncPage() {
       
       if (err instanceof TypeError && err.message === 'Failed to fetch') {
         errorMessage += 'No se pudo conectar con el servidor. Por favor, verifica tu conexión y que las credenciales de Amazon estén configuradas correctamente.';
+      } else if (err.message.includes('VITE_SUPABASE_URL')) {
+        errorMessage += 'Error de configuración: La URL de Supabase no está definida.';
       } else {
         errorMessage += err.message || 'Error desconocido';
       }

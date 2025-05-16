@@ -131,7 +131,6 @@ async function getOrders(accessToken: string, nextToken?: string) {
     console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     
     if (data.payload?.NextToken) {
-      // Instead of recursively fetching, just return the current batch and the next token
       return {
         Orders: filteredOrders,
         nextToken: data.payload.NextToken
@@ -232,7 +231,6 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
 
 async function saveOrdersBulk(orders: any[]) {
   try {
-    // Process orders in chunks of 25
     const chunkSize = 25;
     for (let i = 0; i < orders.length; i += chunkSize) {
       const chunk = orders.slice(i, i + chunkSize);
@@ -252,7 +250,6 @@ async function saveOrdersBulk(orders: any[]) {
 
       console.log(`✅ Saved chunk of ${ordersToSave.length} orders`);
       
-      // Add a small delay between chunks to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (error) {
@@ -263,7 +260,6 @@ async function saveOrdersBulk(orders: any[]) {
 
 async function saveOrderItems(orderId: string, items: any[]) {
   try {
-    // Process items in chunks of 25
     const chunkSize = 25;
     const chunks = [];
     for (let i = 0; i < items.length; i += chunkSize) {
@@ -283,12 +279,10 @@ async function saveOrderItems(orderId: string, items: any[]) {
 
       if (error) throw error;
 
-      // Update inventory for related products and designs
       for (const item of orderItems) {
         await updateInventory(item.asin, item.quantity_ordered);
       }
 
-      // Add a small delay between chunks
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (error) {
@@ -299,7 +293,6 @@ async function saveOrderItems(orderId: string, items: any[]) {
 
 async function updateInventory(asin: string, quantity: number) {
   try {
-    // Get product relationships
     const { data: relationships, error: relError } = await supabase
       .from('product_amazon_products')
       .select(`
@@ -312,7 +305,6 @@ async function updateInventory(asin: string, quantity: number) {
 
     if (relError) throw relError;
 
-    // Update product stock
     for (const rel of relationships || []) {
       if (rel.products?.id) {
         const { error: updateError } = await supabase
@@ -327,7 +319,6 @@ async function updateInventory(asin: string, quantity: number) {
       }
     }
 
-    // Get design relationships
     const { data: designRels, error: designRelError } = await supabase
       .from('design_amazon_products')
       .select(`
@@ -340,7 +331,6 @@ async function updateInventory(asin: string, quantity: number) {
 
     if (designRelError) throw designRelError;
 
-    // Update design stock
     for (const rel of designRels || []) {
       if (rel.designs?.id) {
         const { error: updateError } = await supabase
@@ -404,7 +394,6 @@ Deno.serve(async (req) => {
 
       console.log(`✅ Retrieved ${Orders.length} orders in this batch`);
 
-      // Filter out existing orders
       const newOrders = [];
       for (const order of Orders) {
         const exists = await checkOrderExists(order.AmazonOrderId);
@@ -421,13 +410,11 @@ Deno.serve(async (req) => {
         let batchSuccess = 0;
         let batchErrors = 0;
 
-        // Process items for each order in this batch
         for (const order of newOrders) {
           try {
             const items = await getOrderItems(accessToken, order.AmazonOrderId);
             await saveOrderItems(order.AmazonOrderId, items.OrderItems);
             
-            // Process new products
             for (const item of items.OrderItems) {
               const exists = await checkProductExists(item.ASIN);
               if (!exists) {
@@ -466,7 +453,6 @@ Deno.serve(async (req) => {
           errorCount: batchErrors
         });
 
-        // Add a delay between batches to avoid rate limiting
         if (nextToken) {
           console.log('⏳ Waiting before processing next batch...');
           await new Promise(resolve => setTimeout(resolve, 2000));
