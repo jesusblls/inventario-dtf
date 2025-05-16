@@ -48,77 +48,58 @@ export function DashboardPage() {
 
       if (productsError) throw productsError;
 
-      const lowStockCount = products?.filter(p => p.stock < 10).length || 0;
+      // Get active alerts count
+      const { data: activeAlerts, error: alertsError } = await supabase
+        .from('alerts')
+        .select('id')
+        .eq('status', 'pending');
+
+      if (alertsError) throw alertsError;
+
+      const lowStockCount = activeAlerts?.length || 0;
       const totalProducts = products?.length || 0;
 
-      // Get orders and total revenue with date range parameters
-      const { data: totalRevenue, error: revenueError } = await supabase
-        .rpc('get_total_revenue', {
-          start_date: '1970-01-01T00:00:00Z',
-          end_date: new Date().toISOString()
-        });
+      // Get orders and total revenue
+      const { data: dashboardStats, error: statsError } = await supabase
+        .rpc('get_dashboard_stats');
 
-      if (revenueError) throw revenueError;
+      if (statsError) throw statsError;
+
+      const stats = dashboardStats[0] || {
+        total_sales: 0,
+        total_revenue: 0,
+        average_order_value: 0
+      };
 
       // Get recent orders with amounts
       const { data: orders, error: ordersError } = await supabase
         .from('amazon_orders')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('purchase_date', { ascending: false })
+        .limit(5);
 
       if (ordersError) throw ordersError;
 
-      const totalOrders = orders?.length || 0;
+      // Get top products
+      const { data: topProducts, error: topProductsError } = await supabase
+        .rpc('get_top_products');
 
-      // Get recent orders (last 5)
-      const recentOrders = (orders || []).slice(0, 5).map(order => ({
+      if (topProductsError) throw topProductsError;
+
+      const recentOrders = (orders || []).map(order => ({
         id: order.id,
         orderNumber: order.amazon_order_id,
         amount: order.amount || 0,
         status: order.status,
-        date: order.created_at
+        date: order.purchase_date
       }));
-
-      // Calculate top products (this would need more detailed data)
-      const topProducts = [
-        {
-          name: 'Playera F1 Racing',
-          sales: 156,
-          revenue: 62244,
-          growth: 45
-        },
-        {
-          name: 'Playera Calavera Mexicana',
-          sales: 128,
-          revenue: 44672,
-          growth: 32
-        },
-        {
-          name: 'Playera Dragon Ball',
-          sales: 98,
-          revenue: 34202,
-          growth: -8
-        },
-        {
-          name: 'Playera Street Art',
-          sales: 112,
-          revenue: 39088,
-          growth: 25
-        },
-        {
-          name: 'Playera Gaming Pro',
-          sales: 89,
-          revenue: 31061,
-          growth: 15
-        }
-      ];
 
       setStats({
         totalProducts,
-        totalOrders,
-        totalRevenue: totalRevenue || 0,
+        totalOrders: stats.total_sales,
+        totalRevenue: stats.total_revenue,
         recentOrders,
-        topProducts,
+        topProducts: topProducts || [],
         lowStockCount
       });
     } catch (error) {
@@ -143,7 +124,7 @@ export function DashboardPage() {
           <div className="flex items-center">
             <AlertTriangle className="w-5 h-5 md:w-6 md:h-6 text-yellow-400 flex-shrink-0" />
             <p className="ml-3 text-sm md:text-base text-yellow-700 dark:text-yellow-300">
-              ¡Alerta! {stats.lowStockCount} productos tienen stock bajo
+              ¡Alerta! {stats.lowStockCount} alertas activas
             </p>
           </div>
         </div>
