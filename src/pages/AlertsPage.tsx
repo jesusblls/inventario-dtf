@@ -134,28 +134,26 @@ export function AlertsPage() {
       // Update low stock threshold
       const { error: lowStockError } = await supabase
         .from('alert_settings')
-        .upsert({
-          type: 'low_stock',
+        .update({
           threshold: lowStockThreshold,
           updated_at: new Date().toISOString()
-        });
+        })
+        .eq('type', 'low_stock');
 
       if (lowStockError) throw lowStockError;
 
       // Update high demand threshold
       const { error: highDemandError } = await supabase
         .from('alert_settings')
-        .upsert({
-          type: 'high_demand',
+        .update({
           threshold: highDemandThreshold,
           updated_at: new Date().toISOString()
-        });
+        })
+        .eq('type', 'high_demand');
 
       if (highDemandError) throw highDemandError;
 
       await fetchAlertSettings();
-      await checkAlerts();
-      await fetchAlerts();
     } catch (err) {
       console.error('Error saving settings:', err);
       setError('Error al guardar la configuración. Por favor, intenta de nuevo.');
