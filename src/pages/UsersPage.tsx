@@ -28,10 +28,31 @@ export function UsersPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
+    getCurrentUserRole();
   }, []);
+
+  const getCurrentUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setCurrentUserRole(profile.role);
+      }
+    } catch (err) {
+      console.error('Error fetching user role:', err);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -66,6 +87,13 @@ export function UsersPage() {
 
   const handleCreateUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    // Check if current user is admin
+    if (currentUserRole !== 'admin') {
+      setFormError('No tienes permisos para crear usuarios. Solo los administradores pueden realizar esta acción.');
+      return;
+    }
+
     setFormLoading(true);
     setFormError(null);
 
@@ -79,14 +107,23 @@ export function UsersPage() {
     };
 
     try {
-      // Create user in Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      // Create user using signUp instead of admin.createUser
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
-        email_confirm: true,
+        options: {
+          data: {
+            name: userData.name,
+            role: userData.role,
+          }
+        }
       });
 
-      if (authError) throw authError;
+      if (signUpError) throw signUpError;
+
+      if (!authData.user) {
+        throw new Error('No se pudo crear el usuario');
+      }
 
       // Update profile with name and role
       const { error: profileError } = await supabase
@@ -113,6 +150,12 @@ export function UsersPage() {
   const handleUpdateUser = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedUser) return;
+
+    // Check if current user is admin
+    if (currentUserRole !== 'admin') {
+      setFormError('No tienes permisos para actualizar usuarios. Solo los administradores pueden realizar esta acción.');
+      return;
+    }
 
     setFormLoading(true);
     setFormError(null);
@@ -151,6 +194,20 @@ export function UsersPage() {
     user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Only show the page if user is admin
+  if (currentUserRole !== 'admin') {
+    return (
+      <div className="p-8">
+        <div className="bg-red-100 dark:bg-red-900/50 border-l-4 border-red-500 text-red-700 dark:text-red-300 p-4">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 mr-2" />
+            <p>No tienes permisos para acceder a esta página. Solo los administradores pueden gestionar usuarios.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
