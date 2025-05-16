@@ -76,13 +76,13 @@ export function DashboardPage() {
 
       if (ordersError) throw ordersError;
 
-      // Get all-time top products
+      // Get all-time top products with a proper join
       const { data: topProducts, error: topProductsError } = await supabase
         .from('amazon_order_items')
         .select(`
           asin,
           quantity_ordered,
-          amazon_products!inner (
+          amazon_products!amazon_order_items_asin_fkey (
             title
           )
         `);
