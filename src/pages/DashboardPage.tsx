@@ -79,22 +79,31 @@ export function DashboardPage() {
       // Get all-time top products
       const { data: topProducts, error: topProductsError } = await supabase
         .from('amazon_order_items')
-        .select('asin, quantity_ordered');
+        .select(`
+          asin,
+          quantity_ordered,
+          amazon_products!inner (
+            title
+          )
+        `);
 
       if (topProductsError) throw topProductsError;
 
       // Process top products data
       const productSales = new Map();
+      const productNames = new Map();
       topProducts?.forEach(item => {
-        const currentCount = productSales.get(item.asin) || 0;
-        productSales.set(item.asin, currentCount + item.quantity_ordered);
+        const asin = item.asin;
+        const currentCount = productSales.get(asin) || 0;
+        productSales.set(asin, currentCount + item.quantity_ordered);
+        productNames.set(asin, item.amazon_products.title);
       });
 
       const topProductsList = Array.from(productSales.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(([asin, sales]) => ({
-          name: asin,
+          name: productNames.get(asin) || asin,
           sales,
           revenue: 0,
           growth: 0
