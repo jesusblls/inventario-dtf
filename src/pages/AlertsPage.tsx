@@ -296,7 +296,9 @@ export function AlertsPage() {
                             <div className="flex items-center">
                               <typeDetails.icon className={`w-5 h-5 ${typeDetails.color}`} />
                               <div className="ml-3">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.product?.name}</h3>
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {alert.product?.name} - {alert.product?.size} - {alert.product?.color}
+                                </h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
                                   {typeDetails.text} - {alert.product?.type}
                                 </p>
@@ -362,7 +364,9 @@ export function AlertsPage() {
                             <div className="flex items-center">
                               <typeDetails.icon className="w-5 h-5 text-gray-400" />
                               <div className="ml-3">
-                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">{alert.product?.name}</h3>
+                                <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {alert.product?.name} - {alert.product?.size} - {alert.product?.color}
+                                </h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
                                   {typeDetails.text} - {alert.product?.type}
                                 </p>
