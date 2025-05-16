@@ -92,7 +92,13 @@ export function DashboardPage() {
 
       const topProductsList = Array.from(productSales.entries())
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+        .slice(0, 5)
+        .map(([asin, sales]) => ({
+          name: asin,
+          sales,
+          revenue: 0,
+          growth: 0
+        }));
 
       const recentOrders = (orders || []).map(order => ({
         id: order.id,
@@ -107,7 +113,7 @@ export function DashboardPage() {
         totalOrders,
         totalRevenue,
         recentOrders,
-        topProducts: topProductsList || [],
+        topProducts: topProductsList,
         lowStockCount
       });
     } catch (error) {
@@ -193,13 +199,13 @@ export function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <span className="text-xs md:text-sm font-semibold text-gray-600 dark:text-gray-400">
-                      ${product.revenue.toLocaleString()}
+                      {product.sales.toLocaleString()} ventas
                     </span>
                   </div>
                 </div>
                 <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-200 dark:bg-gray-700">
                   <div
-                    style={{ width: `${(product.revenue / stats.topProducts[0].revenue) * 100}%` }}
+                    style={{ width: `${(product.sales / (stats.topProducts[0]?.sales || 1)) * 100}%` }}
                     className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-600 dark:bg-blue-500"
                   ></div>
                 </div>
