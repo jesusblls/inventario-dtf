@@ -72,6 +72,12 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
     }
 
     try {
+      // Get the current user's ID
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) throw userError;
+      if (!user) throw new Error('No user found');
+
       if (design?.id) {
         // Update existing design
         const { error: updateError } = await supabase
@@ -81,6 +87,7 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
             name,
             stock: stockValue,
             updated_at: new Date().toISOString(),
+            owner_id: user.id // Ensure owner_id is set on update
           })
 
         if (updateError) throw updateError;
@@ -106,12 +113,13 @@ export function DesignModal({ design, onClose, onSave }: DesignModalProps) {
           if (insertAmazonError) throw insertAmazonError;
         }
       } else {
-        // Create new design
+        // Create new design with owner_id
         const { data: designData, error: insertError } = await supabase
           .from('designs')
           .insert({
             name,
             stock: stockValue,
+            owner_id: user.id // Set owner_id for new designs
           })
           .select()
           .single();
