@@ -82,14 +82,6 @@ export function LoginPage() {
               disabled={loading}
             />
           </div>
-          <div className="flex justify-end">
-            <Link
-              to="/reset-password"
-              className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              ¿Olvidaste tu contraseña?
-            </Link>
-          </div>
           <button
             type="submit"
             disabled={loading}
@@ -107,14 +99,6 @@ export function LoginPage() {
             )}
           </button>
         </form>
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            ¿No tienes una cuenta?{' '}
-            <Link to="/signup" className="text-blue-600 hover:text-blue-700 font-medium">
-              Regístrate aquí
-            </Link>
-          </p>
-        </div>
       </div>
     </div>
   );
