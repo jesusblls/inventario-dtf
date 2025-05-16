@@ -80,9 +80,15 @@ export function DashboardPage() {
 
       if (ordersError) throw ordersError;
 
-      // Get top products
+      // Get top products with date range parameters
+      const startDate = new Date('1970-01-01').toISOString();
+      const endDate = new Date().toISOString();
+
       const { data: topProducts, error: topProductsError } = await supabase
-        .rpc('get_top_products');
+        .rpc('get_top_products', {
+          start_date: startDate,
+          end_date: endDate
+        });
 
       if (topProductsError) throw topProductsError;
 
