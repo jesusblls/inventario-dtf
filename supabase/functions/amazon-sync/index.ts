@@ -73,7 +73,9 @@ async function getAccessToken() {
 
 async function getOrders(accessToken: string, nextToken?: string) {
   try {
-    const createdAfter = '2023-01-01T00:00:00Z';
+    // Get orders from last 30 days by default
+    const createdAfter = new Date();
+    createdAfter.setDate(createdAfter.getDate() - 30);
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     if (nextToken) {
       console.log('🔄 Usando NextToken:', nextToken);
@@ -92,8 +94,8 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId.trim(),
-      CreatedAfter: createdAfter,
-      MaxResultsPerPage: '100',
+      CreatedAfter: createdAfter.toISOString(),
+      MaxResultsPerPage: '50',
       OrderStatuses: 'Shipped,Unshipped'
     });
 
@@ -106,7 +108,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
@@ -165,7 +167,7 @@ async function getOrderItems(accessToken: string, orderId: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
@@ -236,21 +238,29 @@ async function checkOrderExists(orderId: string): Promise<boolean> {
 
 async function saveOrdersBulk(orders: any[]) {
   try {
-    const ordersToSave = orders.map(order => ({
-      amazon_order_id: order.AmazonOrderId,
-      status: order.OrderStatus,
-      amount: order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0,
-      purchase_date: order.PurchaseDate || new Date().toISOString(),
-      last_sync_date: new Date().toISOString()
-    }));
+    // Process orders in chunks of 25
+    const chunkSize = 25;
+    for (let i = 0; i < orders.length; i += chunkSize) {
+      const chunk = orders.slice(i, i + chunkSize);
+      const ordersToSave = chunk.map(order => ({
+        amazon_order_id: order.AmazonOrderId,
+        status: order.OrderStatus,
+        amount: order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0,
+        purchase_date: order.PurchaseDate || new Date().toISOString(),
+        last_sync_date: new Date().toISOString()
+      }));
 
-    const { error } = await supabase
-      .from('amazon_orders')
-      .insert(ordersToSave);
+      const { error } = await supabase
+        .from('amazon_orders')
+        .insert(ordersToSave);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    console.log(`✅ Saved ${ordersToSave.length} orders in bulk`);
+      console.log(`✅ Saved chunk of ${ordersToSave.length} orders`);
+      
+      // Add a small delay between chunks to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   } catch (error) {
     console.error('❌ Error saving orders in bulk:', error);
     throw error;
@@ -259,21 +269,33 @@ async function saveOrdersBulk(orders: any[]) {
 
 async function saveOrderItems(orderId: string, items: any[]) {
   try {
-    const orderItems = items.map(item => ({
-      amazon_order_id: orderId,
-      asin: item.ASIN,
-      quantity_ordered: parseInt(item.QuantityOrdered || '1', 10)
-    }));
+    // Process items in chunks of 25
+    const chunkSize = 25;
+    const chunks = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+      chunks.push(items.slice(i, i + chunkSize));
+    }
 
-    const { error } = await supabase
-      .from('amazon_order_items')
-      .insert(orderItems);
+    for (const chunk of chunks) {
+      const orderItems = chunk.map(item => ({
+        amazon_order_id: orderId,
+        asin: item.ASIN,
+        quantity_ordered: parseInt(item.QuantityOrdered || '1', 10)
+      }));
 
-    if (error) throw error;
+      const { error } = await supabase
+        .from('amazon_order_items')
+        .insert(orderItems);
 
-    // Update inventory for related products and designs
-    for (const item of orderItems) {
-      await updateInventory(item.asin, item.quantity_ordered);
+      if (error) throw error;
+
+      // Update inventory for related products and designs
+      for (const item of orderItems) {
+        await updateInventory(item.asin, item.quantity_ordered);
+      }
+
+      // Add a small delay between chunks
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   } catch (error) {
     console.error('Error saving order items:', error);
