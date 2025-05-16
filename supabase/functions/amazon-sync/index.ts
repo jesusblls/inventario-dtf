@@ -240,6 +240,7 @@ async function saveOrdersBulk(orders: any[]) {
       amazon_order_id: order.AmazonOrderId,
       status: order.OrderStatus,
       amount: order.OrderTotal?.Amount ? parseFloat(order.OrderTotal.Amount) : 0,
+      purchase_date: order.PurchaseDate || new Date().toISOString(),
       last_sync_date: new Date().toISOString()
     }));
 
