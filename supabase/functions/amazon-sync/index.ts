@@ -73,9 +73,7 @@ async function getAccessToken() {
 
 async function getOrders(accessToken: string, nextToken?: string) {
   try {
-    // Get orders from last 30 days by default
-    const createdAfter = new Date();
-    createdAfter.setDate(createdAfter.getDate() - 30);
+    const createdAfter = '2023-01-01T00:00:00Z';
     console.log('📦 Obteniendo órdenes desde:', createdAfter);
     if (nextToken) {
       console.log('🔄 Usando NextToken:', nextToken);
@@ -94,7 +92,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const params = new URLSearchParams({
       MarketplaceIds: marketplaceId.trim(),
-      CreatedAfter: createdAfter.toISOString(),
+      CreatedAfter: createdAfter,
       MaxResultsPerPage: '50',
       OrderStatuses: 'Shipped,Unshipped'
     });
@@ -108,7 +106,7 @@ async function getOrders(accessToken: string, nextToken?: string) {
 
     const response = await fetch(apiUrl, { 
       headers,
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!response.ok) {
@@ -133,20 +131,16 @@ async function getOrders(accessToken: string, nextToken?: string) {
     console.log(`✅ ${filteredOrders.length} órdenes obtenidas`);
     
     if (data.payload?.NextToken) {
-      console.log('📑 Obteniendo siguiente página de órdenes...');
-      const nextPageResult = await getOrders(accessToken, data.payload.NextToken);
+      // Instead of recursively fetching, just return the current batch and the next token
       return {
-        Orders: [...filteredOrders, ...nextPageResult.Orders],
-        payload: {
-          ...data.payload,
-          Orders: [...(data.payload.Orders || []), ...(nextPageResult.payload?.Orders || [])]
-        }
+        Orders: filteredOrders,
+        nextToken: data.payload.NextToken
       };
     }
 
     return {
       Orders: filteredOrders,
-      payload: data.payload
+      nextToken: null
     };
   } catch (error) {
     console.error('❌ Error obteniendo órdenes:', error);
@@ -393,106 +387,115 @@ Deno.serve(async (req) => {
     await validateEnvironment();
     console.log('✅ Environment variables validated');
 
-    const startDate = '2023-01-01T00:00:00Z';
-    const endDate = new Date().toISOString();
-
     console.log('🔑 Getting access token...');
     const accessToken = await getAccessToken();
     console.log('✅ Access token obtained');
 
-    console.log('📦 Fetching orders...');
-    const { Orders } = await getOrders(accessToken);
-    console.log(`✅ Retrieved ${Orders.length} orders`);
+    let nextToken = null;
+    let totalProcessed = 0;
+    let totalSuccess = 0;
+    let totalErrors = 0;
+    const batchResults = [];
 
-    // Filter out existing orders
-    const newOrders = [];
-    for (const order of Orders) {
-      const exists = await checkOrderExists(order.AmazonOrderId);
-      if (!exists) {
-        newOrders.push(order);
+    do {
+      console.log(`📦 Fetching batch of orders${nextToken ? ' with token' : ''}...`);
+      const { Orders, nextToken: newToken } = await getOrders(accessToken, nextToken);
+      nextToken = newToken;
+
+      console.log(`✅ Retrieved ${Orders.length} orders in this batch`);
+
+      // Filter out existing orders
+      const newOrders = [];
+      for (const order of Orders) {
+        const exists = await checkOrderExists(order.AmazonOrderId);
+        if (!exists) {
+          newOrders.push(order);
+        }
       }
-    }
 
-    console.log(`📝 Found ${newOrders.length} new orders to process`);
+      console.log(`📝 Found ${newOrders.length} new orders to process in this batch`);
 
-    // Save all new orders in bulk first
-    if (newOrders.length > 0) {
-      await saveOrdersBulk(newOrders);
-    }
-
-    const results = [];
-    let successCount = 0;
-    let errorCount = 0;
-
-    // Now process items for each order
-    for (const order of newOrders) {
-      try {
-        console.log(`📝 Processing items for order ${order.AmazonOrderId}...`);
+      if (newOrders.length > 0) {
+        await saveOrdersBulk(newOrders);
         
-        const items = await getOrderItems(accessToken, order.AmazonOrderId);
-        await saveOrderItems(order.AmazonOrderId, items.OrderItems);
-        console.log(`✅ Items for order ${order.AmazonOrderId} saved`);
+        let batchSuccess = 0;
+        let batchErrors = 0;
 
-        // Save new products if needed
-        for (const item of items.OrderItems) {
-          const exists = await checkProductExists(item.ASIN);
-          if (!exists) {
-            const { error: productError } = await supabase
-              .from('amazon_products')
-              .insert({
-                asin: item.ASIN,
-                title: item.Title,
-                updated_at: new Date().toISOString(),
-              });
+        // Process items for each order in this batch
+        for (const order of newOrders) {
+          try {
+            const items = await getOrderItems(accessToken, order.AmazonOrderId);
+            await saveOrderItems(order.AmazonOrderId, items.OrderItems);
+            
+            // Process new products
+            for (const item of items.OrderItems) {
+              const exists = await checkProductExists(item.ASIN);
+              if (!exists) {
+                const { error: productError } = await supabase
+                  .from('amazon_products')
+                  .insert({
+                    asin: item.ASIN,
+                    title: item.Title,
+                    updated_at: new Date().toISOString(),
+                  });
 
-            if (productError) {
-              console.error(`❌ Error saving product ${item.ASIN}:`, productError);
-              errorCount++;
-            } else {
-              console.log(`✅ New product ${item.ASIN} saved`);
-              successCount++;
+                if (productError) {
+                  console.error(`❌ Error saving product ${item.ASIN}:`, productError);
+                  batchErrors++;
+                } else {
+                  console.log(`✅ New product ${item.ASIN} saved`);
+                  batchSuccess++;
+                }
+              }
             }
+
+            batchSuccess++;
+          } catch (error) {
+            console.error(`❌ Error processing order ${order.AmazonOrderId}:`, error);
+            batchErrors++;
           }
         }
 
-        successCount++;
-        results.push({ 
-          orderId: order.AmazonOrderId, 
-          success: true 
-        });
-      } catch (error) {
-        console.error(`❌ Error processing order ${order.AmazonOrderId}:`, error);
-        errorCount++;
-        results.push({ 
-          orderId: order.AmazonOrderId, 
-          error: error.message 
-        });
-      }
-    }
+        totalProcessed += newOrders.length;
+        totalSuccess += batchSuccess;
+        totalErrors += batchErrors;
 
-    const syncStatus = errorCount === 0 ? 'success' : 'partial';
+        batchResults.push({
+          ordersProcessed: newOrders.length,
+          successCount: batchSuccess,
+          errorCount: batchErrors
+        });
+
+        // Add a delay between batches to avoid rate limiting
+        if (nextToken) {
+          console.log('⏳ Waiting before processing next batch...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    } while (nextToken);
+
+    const syncStatus = totalErrors === 0 ? 'success' : 'partial';
     
     await saveSyncHistory(
-      startDate,
-      endDate,
-      newOrders.length,
+      new Date().toISOString(),
+      new Date().toISOString(),
+      totalProcessed,
       syncStatus,
-      errorCount > 0 ? `${errorCount} errors occurred during sync` : undefined
+      totalErrors > 0 ? `${totalErrors} errors occurred during sync` : undefined
     );
 
     console.log('✅ Sync process completed');
-    console.log(`📊 Summary: ${successCount} successful, ${errorCount} errors`);
+    console.log(`📊 Final Summary: ${totalSuccess} successful, ${totalErrors} errors`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        results,
+        batchResults,
         summary: {
-          startDate,
-          endDate,
-          totalOrders: newOrders.length,
-          successCount,
-          errorCount
+          totalProcessed,
+          totalSuccess,
+          totalErrors,
+          batchCount: batchResults.length
         },
         timestamp: new Date().toISOString()
       }), 
